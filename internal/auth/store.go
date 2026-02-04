@@ -7,6 +7,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,7 +47,7 @@ func (s *Store) DisableKeychain() {
 }
 
 // GetToken retrieves the token from the highest-priority source available.
-// Priority: environment > keychain > config file
+// Priority: environment > keychain > config file.
 func (s *Store) GetToken() (string, error) {
 	// 1. Check environment variable
 	if token := os.Getenv(EnvToken); token != "" {
@@ -92,7 +93,7 @@ func (s *Store) DeleteToken() error {
 	if s.keychainEnabled {
 		if err := keyring.Delete(KeyringService, KeyringUser); err != nil {
 			// Ignore "not found" errors
-			if err != keyring.ErrNotFound {
+			if !errors.Is(err, keyring.ErrNotFound) {
 				lastErr = err
 			}
 		}

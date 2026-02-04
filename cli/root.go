@@ -4,7 +4,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is set at build time via ldflags
+// Version is set at build time via ldflags.
 var Version = "dev"
 
 // RootCommand holds the root cobra command and global flag values.
@@ -15,7 +15,7 @@ type RootCommand struct {
 	Quiet      bool
 }
 
-// global instance for flag access from subcommands
+// global instance for flag access from subcommands.
 var rootCmd *RootCommand
 
 // NewRootCommand creates and configures the root command.
@@ -27,7 +27,7 @@ func NewRootCommand() *RootCommand {
 		Use:   "fastmail-cli",
 		Short: "CLI for FastMail JMAP API",
 		Long:  "A command-line interface for interacting with FastMail via JMAP.",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 		SilenceUsage: true,
@@ -79,6 +79,11 @@ func (r *RootCommand) Execute() error {
 // SetOut sets the output writer for the command.
 func (r *RootCommand) SetOut(w interface{ Write([]byte) (int, error) }) {
 	r.cmd.SetOut(w)
+}
+
+// SetErr sets the error writer for the command.
+func (r *RootCommand) SetErr(w interface{ Write([]byte) (int, error) }) {
+	r.cmd.SetErr(w)
 }
 
 // SetArgs sets the arguments for the command.

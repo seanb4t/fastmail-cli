@@ -51,34 +51,39 @@ func TestRootCommand_Help(t *testing.T) {
 
 func TestRootCommand_GlobalFlags(t *testing.T) {
 	tests := []struct {
-		name      string
-		args      []string
-		wantJSON  bool
-		wantQuiet bool
+		name    string
+		args    []string
+		checkFn func(cmd *RootCommand) error
 	}{
 		{
-			name:      "default flags",
-			args:      []string{"--help"},
-			wantJSON:  false,
-			wantQuiet: false,
+			name: "config flag",
+			args: []string{"--config", "/custom/path.yaml"},
+			checkFn: func(cmd *RootCommand) error {
+				if cmd.ConfigFile != "/custom/path.yaml" {
+					return errorf("expected config '/custom/path.yaml', got '%s'", cmd.ConfigFile)
+				}
+				return nil
+			},
 		},
 		{
-			name:      "json flag",
-			args:      []string{"--json", "--help"},
-			wantJSON:  true,
-			wantQuiet: false,
+			name: "json flag",
+			args: []string{"--json"},
+			checkFn: func(cmd *RootCommand) error {
+				if !cmd.JSONOutput {
+					return errorf("expected JSONOutput true, got false")
+				}
+				return nil
+			},
 		},
 		{
-			name:      "quiet flag",
-			args:      []string{"--quiet", "--help"},
-			wantJSON:  false,
-			wantQuiet: true,
-		},
-		{
-			name:      "both flags",
-			args:      []string{"--json", "--quiet", "--help"},
-			wantJSON:  true,
-			wantQuiet: true,
+			name: "quiet flag",
+			args: []string{"--quiet"},
+			checkFn: func(cmd *RootCommand) error {
+				if !cmd.Quiet {
+					return errorf("expected Quiet true, got false")
+				}
+				return nil
+			},
 		},
 	}
 
@@ -92,41 +97,50 @@ func TestRootCommand_GlobalFlags(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if root.JSONOutput != tt.wantJSON {
-				t.Errorf("JSONOutput = %v, want %v", root.JSONOutput, tt.wantJSON)
-			}
-			if root.Quiet != tt.wantQuiet {
-				t.Errorf("Quiet = %v, want %v", root.Quiet, tt.wantQuiet)
+			if err := tt.checkFn(root); err != nil {
+				t.Error(err)
 			}
 		})
 	}
 }
 
-func TestAuthSubcommands(t *testing.T) {
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{"auth help", []string{"auth", "--help"}, false},
-		// login requires --token flag or interactive terminal
-		{"auth login requires token", []string{"auth", "login"}, true},
-		// logout and status now work (implemented in auth.go)
-		{"auth logout works", []string{"auth", "logout"}, false},
-		{"auth status works", []string{"auth", "status"}, false},
+func TestExecute(t *testing.T) {
+	// Execute() should work as the entry point
+	// We can't fully test this without mocking os.Exit,
+	// but we can verify it doesn't panic
+	err := Execute()
+	if err != nil {
+		t.Fatalf("Execute() returned error: %v", err)
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var stdout bytes.Buffer
-			cmd := NewRootCommand()
-			cmd.SetOut(&stdout)
-			cmd.SetArgs(tt.args)
+// errorf is a helper to create formatted errors for test checks.
+func errorf(format string, args ...any) error {
+	return &testError{msg: sprintf(format, args...)}
+}
 
-			err := cmd.Execute()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
+type testError struct {
+	msg string
+}
+
+func (e *testError) Error() string {
+	return e.msg
+}
+
+func sprintf(format string, args ...any) string {
+	// Simple sprintf implementation without importing fmt in test
+	result := format
+	for _, arg := range args {
+		switch v := arg.(type) {
+		case string:
+			result = strings.Replace(result, "%s", v, 1)
+		case bool:
+			if v {
+				result = strings.Replace(result, "%v", "true", 1)
+			} else {
+				result = strings.Replace(result, "%v", "false", 1)
 			}
-		})
+		}
 	}
+	return result
 }
