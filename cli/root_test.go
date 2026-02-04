@@ -56,33 +56,33 @@ func TestRootCommand_Help(t *testing.T) {
 
 func TestRootCommand_GlobalFlags(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		wantJSON bool
+		name      string
+		args      []string
+		wantJSON  bool
 		wantQuiet bool
 	}{
 		{
-			name:     "default flags",
-			args:     []string{"--help"},
-			wantJSON: false,
+			name:      "default flags",
+			args:      []string{"--help"},
+			wantJSON:  false,
 			wantQuiet: false,
 		},
 		{
-			name:     "json flag",
-			args:     []string{"--json", "--help"},
-			wantJSON: true,
+			name:      "json flag",
+			args:      []string{"--json", "--help"},
+			wantJSON:  true,
 			wantQuiet: false,
 		},
 		{
-			name:     "quiet flag",
-			args:     []string{"--quiet", "--help"},
-			wantJSON: false,
+			name:      "quiet flag",
+			args:      []string{"--quiet", "--help"},
+			wantJSON:  false,
 			wantQuiet: true,
 		},
 		{
-			name:     "both flags",
-			args:     []string{"--json", "--quiet", "--help"},
-			wantJSON: true,
+			name:      "both flags",
+			args:      []string{"--json", "--quiet", "--help"},
+			wantJSON:  true,
 			wantQuiet: true,
 		},
 	}
@@ -172,9 +172,11 @@ func TestAuthSubcommands(t *testing.T) {
 		wantErr bool
 	}{
 		{"auth help", []string{"auth", "--help"}, false},
-		{"auth login not implemented", []string{"auth", "login"}, true},
-		{"auth logout not implemented", []string{"auth", "logout"}, true},
-		{"auth status not implemented", []string{"auth", "status"}, true},
+		// login requires --token flag or interactive terminal
+		{"auth login requires token", []string{"auth", "login"}, true},
+		// logout and status now work (implemented in auth.go)
+		{"auth logout works", []string{"auth", "logout"}, false},
+		{"auth status works", []string{"auth", "status"}, false},
 	}
 
 	for _, tt := range tests {

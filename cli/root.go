@@ -48,41 +48,7 @@ and other FastMail features.`,
 	return cmd
 }
 
-// newAuthCommand creates a placeholder auth subcommand.
-func newAuthCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "auth",
-		Short: "Manage authentication",
-		Long:  "Commands for managing FastMail authentication credentials.",
-	}
-
-	// Placeholder subcommands - to be implemented in fc-3hh.8
-	cmd.AddCommand(&cobra.Command{
-		Use:   "login",
-		Short: "Store API token",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("not implemented")
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:   "logout",
-		Short: "Remove stored credentials",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("not implemented")
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:   "status",
-		Short: "Show authentication status",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("not implemented")
-		},
-	})
-
-	return cmd
-}
+// newAuthCommand is defined in auth.go
 
 // GetConfigPath returns the config file path from the flag.
 func GetConfigPath() string {
