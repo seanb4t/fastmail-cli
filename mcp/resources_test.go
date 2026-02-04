@@ -16,11 +16,11 @@ func TestResourceRegistry_List(t *testing.T) {
 
 	// Verify expected resources are registered
 	expectedURIs := map[string]bool{
-		"fastmail://inbox":         false,
-		"fastmail://mail/{id}":     false,
-		"fastmail://contacts":      false,
+		"fastmail://inbox":          false,
+		"fastmail://mail/{id}":      false,
+		"fastmail://contacts":       false,
 		"fastmail://calendar/today": false,
-		"fastmail://masked-emails": false,
+		"fastmail://masked-emails":  false,
 	}
 
 	for _, res := range resources {
