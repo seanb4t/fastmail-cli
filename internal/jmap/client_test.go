@@ -3,8 +3,10 @@ package jmap
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -167,6 +169,35 @@ func TestNewClient(t *testing.T) {
 	assert.Equal(t, "https://api.example.com/jmap/session", client.endpoint)
 	assert.Equal(t, "my-token", client.accessToken)
 	assert.NotNil(t, client.httpClient)
+}
+
+// mockRoundTripper implements http.RoundTripper for testing.
+type mockRoundTripper struct {
+	fn func(req *http.Request) (*http.Response, error)
+}
+
+func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return m.fn(req)
+}
+
+func TestClient_WithHTTPClient(t *testing.T) {
+	called := false
+	mockTransport := &mockRoundTripper{
+		fn: func(_ *http.Request) (*http.Response, error) {
+			called = true
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(validSessionJSON())),
+			}, nil
+		},
+	}
+
+	client := NewClient("https://api.fastmail.com/jmap/session", "test-token",
+		WithHTTPClient(&http.Client{Transport: mockTransport}))
+
+	_, err := client.Authenticate(context.Background())
+	require.NoError(t, err)
+	assert.True(t, called, "custom HTTP client should be used")
 }
 
 func TestClient_Call(t *testing.T) {
