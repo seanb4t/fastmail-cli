@@ -33,13 +33,19 @@ type Email struct {
 	// Cc contains carbon copy recipients.
 	Cc []EmailAddress
 
-	// Date is when the email was received.
-	Date time.Time
+	// Bcc contains blind carbon copy recipients.
+	Bcc []EmailAddress
+
+	// ReceivedAt is when the email was received.
+	ReceivedAt time.Time
 
 	// Preview is a short text preview of the email body.
 	Preview string
 
-	// Keywords contains email flags like "seen", "flagged", "draft".
+	// Body is the email body content (plain text).
+	Body string
+
+	// Keywords contains email flags like "$seen", "$flagged", "$draft".
 	Keywords []string
 
 	// MailboxIDs lists the mailboxes containing this email.

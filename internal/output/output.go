@@ -62,7 +62,7 @@ func (p *Printer) PrintEmail(email fastmail.Email) error {
 	// Table format for single email
 	headers := []string{"ID", "Subject", "From", "Date"}
 	rows := [][]string{
-		{email.ID, email.Subject, email.From.String(), formatDate(email.Date)},
+		{email.ID, email.Subject, email.From.String(), formatDate(email.ReceivedAt)},
 	}
 	_, err := io.WriteString(p.w, FormatTable(headers, rows))
 	return err
@@ -87,7 +87,7 @@ func (p *Printer) PrintEmailList(emails []fastmail.Email) error {
 	headers := []string{"ID", "Subject", "From", "Date"}
 	rows := make([][]string, len(emails))
 	for i, e := range emails {
-		rows[i] = []string{e.ID, e.Subject, e.From.String(), formatDate(e.Date)}
+		rows[i] = []string{e.ID, e.Subject, e.From.String(), formatDate(e.ReceivedAt)}
 	}
 	_, err := io.WriteString(p.w, FormatTable(headers, rows))
 	return err

@@ -618,3 +618,251 @@ func TestResolveMailbox_ByRole(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "mb-456", mailboxID)
 }
+
+func TestMailService_Send(t *testing.T) {
+	requestCount := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+		requestCount++
+
+		switch methodName {
+		case "Identity/get":
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Identity/get", {
+						"accountId": "acc1",
+						"state": "i1",
+						"list": [
+							{
+								"id": "identity1",
+								"name": "Test User",
+								"email": "test@example.com"
+							}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case "Mailbox/get":
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-drafts", "name": "Drafts", "role": "drafts"},
+							{"id": "mb-sent", "name": "Sent", "role": "sent"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case "Email/set":
+			// Verify the create payload has required fields
+			args := firstCall[1].(map[string]any)
+			create := args["create"].(map[string]any)
+			draft := create["draft"].(map[string]any)
+
+			assert.Equal(t, "Test Subject", draft["subject"])
+			to := draft["to"].([]any)
+			assert.Len(t, to, 1)
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/set", {
+						"accountId": "acc1",
+						"oldState": "e1",
+						"newState": "e2",
+						"created": {
+							"draft": {
+								"id": "email-new-123",
+								"blobId": "blob123",
+								"threadId": "thread123"
+							}
+						}
+					}, "0"],
+					["EmailSubmission/set", {
+						"accountId": "acc1",
+						"oldState": "sub1",
+						"newState": "sub2",
+						"created": {
+							"sub1": {
+								"id": "submission123"
+							}
+						}
+					}, "1"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	opts := SendOptions{
+		To:      []EmailAddress{{Email: "recipient@example.com"}},
+		Subject: "Test Subject",
+		Body:    "Test body content",
+	}
+
+	emailID, err := client.Mail().Send(ctx, opts)
+	require.NoError(t, err)
+	assert.Equal(t, "email-new-123", emailID)
+}
+
+func TestMailService_Reply(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		switch methodName {
+		case "Identity/get":
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Identity/get", {
+						"accountId": "acc1",
+						"state": "i1",
+						"list": [
+							{
+								"id": "identity1",
+								"name": "Test User",
+								"email": "me@example.com"
+							}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case "Email/get":
+			args := firstCall[1].(map[string]any)
+			ids := args["ids"].([]any)
+			if ids[0] == "original-email-123" {
+				// Original email for reply
+				_, _ = w.Write([]byte(`{
+					"sessionState": "s1",
+					"methodResponses": [
+						["Email/get", {
+							"accountId": "acc1",
+							"state": "e1",
+							"list": [
+								{
+									"id": "original-email-123",
+									"threadId": "thread-orig",
+									"subject": "Original Subject",
+									"from": [{"name": "Sender", "email": "sender@example.com"}],
+									"to": [{"email": "me@example.com"}],
+									"cc": [],
+									"messageId": ["<msg123@example.com>"],
+									"inReplyTo": [],
+									"references": [],
+									"receivedAt": "2024-01-15T10:30:00Z",
+									"bodyValues": {
+										"1": {"value": "Original message body"}
+									},
+									"textBody": [{"partId": "1", "type": "text/plain"}]
+								}
+							],
+							"notFound": []
+						}, "0"]
+					]
+				}`))
+			}
+		case "Mailbox/get":
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-drafts", "name": "Drafts", "role": "drafts"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case "Email/set":
+			// Verify the reply has proper threading
+			args := firstCall[1].(map[string]any)
+			create := args["create"].(map[string]any)
+			reply := create["reply"].(map[string]any)
+
+			subject := reply["subject"].(string)
+			assert.True(t, len(subject) > 0 && (subject[:4] == "Re: " || subject == "Re: Original Subject"))
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/set", {
+						"accountId": "acc1",
+						"oldState": "e1",
+						"newState": "e2",
+						"created": {
+							"reply": {
+								"id": "reply-email-456",
+								"blobId": "blob456",
+								"threadId": "thread-orig"
+							}
+						}
+					}, "0"],
+					["EmailSubmission/set", {
+						"accountId": "acc1",
+						"oldState": "sub1",
+						"newState": "sub2",
+						"created": {
+							"sub1": {
+								"id": "submission456"
+							}
+						}
+					}, "1"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	opts := ReplyOptions{
+		EmailID:  "original-email-123",
+		Body:     "This is my reply",
+		ReplyAll: false,
+	}
+
+	replyID, err := client.Mail().Reply(ctx, opts)
+	require.NoError(t, err)
+	assert.Equal(t, "reply-email-456", replyID)
+}

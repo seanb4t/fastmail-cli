@@ -43,6 +43,7 @@ func NewRootCommand() *RootCommand {
 
 	// Add subcommands
 	root.cmd.AddCommand(newAuthCommand())
+	root.cmd.AddCommand(newMailCommand())
 
 	return root
 }

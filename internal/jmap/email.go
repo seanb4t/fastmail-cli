@@ -12,6 +12,40 @@ type Email struct {
 	ReceivedAt string          `json:"receivedAt,omitempty"`
 	Subject    string          `json:"subject,omitempty"`
 	Preview    string          `json:"preview,omitempty"`
+
+	// Header fields for reading/creating emails
+	From       []EmailAddress `json:"from,omitempty"`
+	To         []EmailAddress `json:"to,omitempty"`
+	Cc         []EmailAddress `json:"cc,omitempty"`
+	Bcc        []EmailAddress `json:"bcc,omitempty"`
+	ReplyTo    []EmailAddress `json:"replyTo,omitempty"`
+	MessageID  []string       `json:"messageId,omitempty"`
+	InReplyTo  []string       `json:"inReplyTo,omitempty"`
+	References []string       `json:"references,omitempty"`
+
+	// Body content
+	BodyValues map[string]BodyValue `json:"bodyValues,omitempty"`
+	TextBody   []BodyPart           `json:"textBody,omitempty"`
+	HTMLBody   []BodyPart           `json:"htmlBody,omitempty"`
+}
+
+// EmailAddress represents a JMAP email address.
+type EmailAddress struct {
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email"`
+}
+
+// BodyValue contains the actual content of an email body part.
+type BodyValue struct {
+	Value             string `json:"value"`
+	IsEncodingProblem bool   `json:"isEncodingProblem,omitempty"`
+	IsTruncated       bool   `json:"isTruncated,omitempty"`
+}
+
+// BodyPart describes a part of the email body structure.
+type BodyPart struct {
+	PartID string `json:"partId,omitempty"`
+	Type   string `json:"type,omitempty"`
 }
 
 // Comparator specifies sort order for queries.

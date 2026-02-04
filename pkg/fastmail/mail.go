@@ -394,9 +394,9 @@ func (s *MailService) resolveMailbox(ctx context.Context, accountID, folder stri
 func convertEmails(jmapEmails []jmap.Email) []Email {
 	emails := make([]Email, len(jmapEmails))
 	for i, je := range jmapEmails {
-		var date time.Time
+		var receivedAt time.Time
 		if je.ReceivedAt != "" {
-			date, _ = time.Parse(time.RFC3339, je.ReceivedAt)
+			receivedAt, _ = time.Parse(time.RFC3339, je.ReceivedAt)
 		}
 
 		mailboxIDs := make([]string, 0, len(je.MailboxIDs))
@@ -404,10 +404,10 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 			mailboxIDs = append(mailboxIDs, id)
 		}
 
-		// Convert keywords map to slice
+		// Convert JMAP keywords map to keyword slice
 		keywords := make([]string, 0, len(je.Keywords))
-		for keyword, present := range je.Keywords {
-			if present {
+		for keyword, set := range je.Keywords {
+			if set {
 				keywords = append(keywords, keyword)
 			}
 		}
@@ -417,11 +417,420 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 			ThreadID:   je.ThreadID,
 			Subject:    je.Subject,
 			Preview:    je.Preview,
-			Date:       date,
+			ReceivedAt: receivedAt,
 			Size:       je.Size,
 			Keywords:   keywords,
 			MailboxIDs: mailboxIDs,
 		}
 	}
 	return emails
+}
+
+// SendOptions specifies options for sending an email.
+type SendOptions struct {
+	To      []EmailAddress
+	Cc      []EmailAddress
+	Bcc     []EmailAddress
+	Subject string
+	Body    string
+}
+
+// Send creates and sends a new email.
+func (s *MailService) Send(ctx context.Context, opts SendOptions) (string, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// Get the default identity for sending
+	identity, err := s.getDefaultIdentity(ctx, accountID)
+	if err != nil {
+		return "", oops.Wrapf(err, "getting identity")
+	}
+
+	// Find the Drafts mailbox
+	draftsID, err := s.resolveMailbox(ctx, accountID, "Drafts")
+	if err != nil {
+		return "", oops.Wrapf(err, "resolving Drafts folder")
+	}
+
+	// Build the email object
+	emailData := buildEmailForSend(identity, opts, draftsID)
+
+	// Create email and submit in one request
+	return s.createAndSubmit(ctx, accountID, identity.ID, "draft", emailData)
+}
+
+// ReplyOptions specifies options for replying to an email.
+type ReplyOptions struct {
+	EmailID  string
+	Body     string
+	ReplyAll bool
+}
+
+// Reply creates and sends a reply to an existing email.
+func (s *MailService) Reply(ctx context.Context, opts ReplyOptions) (string, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// Get the default identity
+	identity, err := s.getDefaultIdentity(ctx, accountID)
+	if err != nil {
+		return "", oops.Wrapf(err, "getting identity")
+	}
+
+	// Get the original email with full details
+	original, err := s.getEmailForReply(ctx, accountID, opts.EmailID)
+	if err != nil {
+		return "", oops.Wrapf(err, "getting original email")
+	}
+
+	// Find the Drafts mailbox
+	draftsID, err := s.resolveMailbox(ctx, accountID, "Drafts")
+	if err != nil {
+		return "", oops.Wrapf(err, "resolving Drafts folder")
+	}
+
+	// Build the reply email
+	emailData := buildEmailForReply(identity, original, opts, draftsID)
+
+	// Create and submit
+	return s.createAndSubmit(ctx, accountID, identity.ID, "reply", emailData)
+}
+
+// getDefaultIdentity retrieves the first available identity for the account.
+func (s *MailService) getDefaultIdentity(ctx context.Context, accountID string) (*jmap.Identity, error) {
+	getBuilder := jmap.NewIdentityGet(accountID)
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapSubmission)
+	callID := req.Invoke("Identity/get", getBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return nil, oops.Errorf("identity get failed: %s", result.Error())
+	}
+
+	var identityResp jmap.IdentityGetResponse
+	if err := result.Decode(&identityResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding response")
+	}
+
+	if len(identityResp.List) == 0 {
+		return nil, oops.Errorf("no identities found")
+	}
+
+	return &identityResp.List[0], nil
+}
+
+// getEmailForReply retrieves an email with fields needed for reply.
+func (s *MailService) getEmailForReply(ctx context.Context, accountID, emailID string) (*jmap.Email, error) {
+	getBuilder := jmap.NewEmailGet(accountID).
+		IDs(emailID).
+		Properties(
+			"id", "threadId", "subject", "from", "to", "cc", "replyTo",
+			"messageId", "inReplyTo", "references", "bodyValues", "textBody",
+		)
+
+	// Request body values for quoted text
+	args := getBuilder.Build()
+	args["fetchTextBodyValues"] = true
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	callID := req.Invoke("Email/get", args)
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return nil, oops.Errorf("get failed: %s", result.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := result.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding response")
+	}
+
+	if len(getResp.NotFound) > 0 || len(getResp.List) == 0 {
+		return nil, oops.Errorf("email not found: %s", emailID)
+	}
+
+	return &getResp.List[0], nil
+}
+
+// createAndSubmit creates an email and submits it for delivery.
+func (s *MailService) createAndSubmit(ctx context.Context, accountID, identityID, clientID string, emailData map[string]any) (string, error) {
+	// Build Email/set to create the email
+	emailSetBuilder := jmap.NewEmailSet(accountID).Create(clientID, emailData)
+
+	// Get the drafts mailbox ID for the update patch
+	draftsID := getDraftsKey(emailData)
+
+	// Build EmailSubmission/set to submit the email
+	// After successful send, remove draft keyword
+	submissionSetBuilder := jmap.NewEmailSubmissionSet(accountID).
+		Create("sub1", map[string]any{
+			"identityId": identityID,
+			"emailId":    "#" + clientID,
+		}).
+		// Remove draft keyword after successful send
+		OnSuccessUpdateEmail("#"+clientID, map[string]any{
+			"mailboxIds/" + draftsID: nil,
+			"keywords/$draft":        nil,
+		})
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail, jmap.CapSubmission)
+	emailCallID := req.Invoke("Email/set", emailSetBuilder.Build())
+	subCallID := req.Invoke("EmailSubmission/set", submissionSetBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return "", oops.Wrapf(err, "executing JMAP request")
+	}
+
+	// Check Email/set result
+	emailResult, err := resp.GetResult(emailCallID)
+	if err != nil {
+		return "", oops.Wrapf(err, "getting email set result")
+	}
+	if emailResult.IsError() {
+		return "", oops.Errorf("email create failed: %s", emailResult.Error())
+	}
+
+	var emailSetResp jmap.EmailSetResponse
+	if err := emailResult.Decode(&emailSetResp); err != nil {
+		return "", oops.Wrapf(err, "decoding email set response")
+	}
+
+	if errInfo, ok := emailSetResp.NotCreated[clientID]; ok {
+		return "", oops.Errorf("failed to create email: %s", errInfo.Error())
+	}
+
+	createdEmail, ok := emailSetResp.Created[clientID]
+	if !ok {
+		return "", oops.Errorf("email not returned in created map")
+	}
+
+	// Check EmailSubmission/set result
+	subResult, err := resp.GetResult(subCallID)
+	if err != nil {
+		return "", oops.Wrapf(err, "getting submission result")
+	}
+	if subResult.IsError() {
+		return "", oops.Errorf("submission failed: %s", subResult.Error())
+	}
+
+	var subResp jmap.EmailSubmissionSetResponse
+	if err := subResult.Decode(&subResp); err != nil {
+		return "", oops.Wrapf(err, "decoding submission response")
+	}
+
+	if errInfo, ok := subResp.NotCreated["sub1"]; ok {
+		return "", oops.Errorf("failed to submit email: %s", errInfo.Error())
+	}
+
+	return createdEmail.ID, nil
+}
+
+// getDraftsKey extracts the drafts mailbox ID from emailData.
+func getDraftsKey(emailData map[string]any) string {
+	if mailboxIDs, ok := emailData["mailboxIds"].(map[string]bool); ok {
+		for id := range mailboxIDs {
+			return id
+		}
+	}
+	return ""
+}
+
+// buildEmailForSend constructs the email data map for a new email.
+func buildEmailForSend(identity *jmap.Identity, opts SendOptions, draftsMailboxID string) map[string]any {
+	// Convert domain addresses to JMAP addresses
+	to := make([]map[string]string, len(opts.To))
+	for i, addr := range opts.To {
+		to[i] = map[string]string{"email": addr.Email}
+		if addr.Name != "" {
+			to[i]["name"] = addr.Name
+		}
+	}
+
+	cc := make([]map[string]string, len(opts.Cc))
+	for i, addr := range opts.Cc {
+		cc[i] = map[string]string{"email": addr.Email}
+		if addr.Name != "" {
+			cc[i]["name"] = addr.Name
+		}
+	}
+
+	bcc := make([]map[string]string, len(opts.Bcc))
+	for i, addr := range opts.Bcc {
+		bcc[i] = map[string]string{"email": addr.Email}
+		if addr.Name != "" {
+			bcc[i]["name"] = addr.Name
+		}
+	}
+
+	email := map[string]any{
+		"mailboxIds": map[string]bool{draftsMailboxID: true},
+		"keywords":   map[string]bool{"$draft": true},
+		"from":       []map[string]string{{"email": identity.Email, "name": identity.Name}},
+		"to":         to,
+		"subject":    opts.Subject,
+		"bodyValues": map[string]any{
+			"body": map[string]any{
+				"value":       opts.Body,
+				"charset":     "utf-8",
+				"disposition": nil,
+			},
+		},
+		"textBody": []map[string]any{
+			{"partId": "body", "type": "text/plain"},
+		},
+	}
+
+	if len(cc) > 0 {
+		email["cc"] = cc
+	}
+	if len(bcc) > 0 {
+		email["bcc"] = bcc
+	}
+
+	return email
+}
+
+// buildEmailForReply constructs the email data map for a reply.
+func buildEmailForReply(identity *jmap.Identity, original *jmap.Email, opts ReplyOptions, draftsMailboxID string) map[string]any {
+	// Determine recipients
+	var to []map[string]string
+
+	// Reply-To header takes precedence, then From
+	if len(original.ReplyTo) > 0 {
+		to = convertJMAPAddresses(original.ReplyTo)
+	} else if len(original.From) > 0 {
+		to = convertJMAPAddresses(original.From)
+	}
+
+	var cc []map[string]string
+	if opts.ReplyAll {
+		// Add original To (excluding ourselves) to CC
+		for _, addr := range original.To {
+			if !strings.EqualFold(addr.Email, identity.Email) {
+				cc = append(cc, map[string]string{"email": addr.Email, "name": addr.Name})
+			}
+		}
+		// Add original CC (excluding ourselves) to CC
+		for _, addr := range original.Cc {
+			if !strings.EqualFold(addr.Email, identity.Email) {
+				cc = append(cc, map[string]string{"email": addr.Email, "name": addr.Name})
+			}
+		}
+	}
+
+	// Build subject with Re: prefix
+	subject := original.Subject
+	if !strings.HasPrefix(strings.ToLower(subject), "re:") {
+		subject = "Re: " + subject
+	}
+
+	// Build references header for threading
+	var references []string
+	references = append(references, original.References...)
+	if len(original.MessageID) > 0 {
+		references = append(references, original.MessageID...)
+	}
+
+	// Quote the original message
+	quotedBody := buildQuotedReply(original, opts.Body)
+
+	email := map[string]any{
+		"mailboxIds": map[string]bool{draftsMailboxID: true},
+		"keywords":   map[string]bool{"$draft": true},
+		"from":       []map[string]string{{"email": identity.Email, "name": identity.Name}},
+		"to":         to,
+		"subject":    subject,
+		"inReplyTo":  original.MessageID,
+		"references": references,
+		"bodyValues": map[string]any{
+			"body": map[string]any{
+				"value":   quotedBody,
+				"charset": "utf-8",
+			},
+		},
+		"textBody": []map[string]any{
+			{"partId": "body", "type": "text/plain"},
+		},
+	}
+
+	if len(cc) > 0 {
+		email["cc"] = cc
+	}
+
+	return email
+}
+
+// convertJMAPAddresses converts JMAP addresses to the map format for creation.
+func convertJMAPAddresses(addrs []jmap.EmailAddress) []map[string]string {
+	result := make([]map[string]string, len(addrs))
+	for i, addr := range addrs {
+		result[i] = map[string]string{"email": addr.Email}
+		if addr.Name != "" {
+			result[i]["name"] = addr.Name
+		}
+	}
+	return result
+}
+
+// buildQuotedReply creates the reply body with quoted original.
+func buildQuotedReply(original *jmap.Email, replyBody string) string {
+	var originalText string
+
+	// Extract original body text
+	if len(original.TextBody) > 0 && len(original.BodyValues) > 0 {
+		partID := original.TextBody[0].PartID
+		if bodyValue, ok := original.BodyValues[partID]; ok {
+			originalText = bodyValue.Value
+		}
+	}
+
+	if originalText == "" {
+		return replyBody
+	}
+
+	// Quote each line
+	lines := strings.Split(originalText, "\n")
+	quoted := make([]string, len(lines))
+	for i, line := range lines {
+		quoted[i] = "> " + line
+	}
+
+	// Build attribution
+	var from string
+	if len(original.From) > 0 {
+		if original.From[0].Name != "" {
+			from = original.From[0].Name
+		} else {
+			from = original.From[0].Email
+		}
+	}
+
+	attribution := ""
+	if from != "" {
+		attribution = "On " + original.ReceivedAt + ", " + from + " wrote:\n"
+	}
+
+	return replyBody + "\n\n" + attribution + strings.Join(quoted, "\n")
 }
