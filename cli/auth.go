@@ -15,16 +15,6 @@ import (
 	"golang.org/x/term"
 )
 
-// AuthStatusError wraps an error with an exit code for the auth status command.
-type AuthStatusError struct {
-	Code    int
-	Message string
-}
-
-func (e *AuthStatusError) Error() string {
-	return e.Message
-}
-
 // authStatusHTTPClient allows injecting a custom HTTP client for testing.
 var authStatusHTTPClient *http.Client
 
