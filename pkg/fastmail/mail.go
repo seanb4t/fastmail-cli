@@ -10,19 +10,6 @@ import (
 	"github.com/seanb4t/fastmail-cli/internal/jmap"
 )
 
-// Email represents an email message.
-type Email struct {
-	ID         string
-	ThreadID   string
-	Subject    string
-	Preview    string
-	ReceivedAt time.Time
-	Size       uint64
-	IsRead     bool
-	IsFlagged  bool
-	MailboxIDs []string
-}
-
 // MailService provides email operations.
 type MailService struct {
 	client *Client
@@ -407,9 +394,9 @@ func (s *MailService) resolveMailbox(ctx context.Context, accountID, folder stri
 func convertEmails(jmapEmails []jmap.Email) []Email {
 	emails := make([]Email, len(jmapEmails))
 	for i, je := range jmapEmails {
-		var receivedAt time.Time
+		var date time.Time
 		if je.ReceivedAt != "" {
-			receivedAt, _ = time.Parse(time.RFC3339, je.ReceivedAt)
+			date, _ = time.Parse(time.RFC3339, je.ReceivedAt)
 		}
 
 		mailboxIDs := make([]string, 0, len(je.MailboxIDs))
@@ -417,15 +404,22 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 			mailboxIDs = append(mailboxIDs, id)
 		}
 
+		// Convert keywords map to slice
+		keywords := make([]string, 0, len(je.Keywords))
+		for keyword, present := range je.Keywords {
+			if present {
+				keywords = append(keywords, keyword)
+			}
+		}
+
 		emails[i] = Email{
 			ID:         je.ID,
 			ThreadID:   je.ThreadID,
 			Subject:    je.Subject,
 			Preview:    je.Preview,
-			ReceivedAt: receivedAt,
+			Date:       date,
 			Size:       je.Size,
-			IsRead:     je.Keywords["$seen"],
-			IsFlagged:  je.Keywords["$flagged"],
+			Keywords:   keywords,
 			MailboxIDs: mailboxIDs,
 		}
 	}

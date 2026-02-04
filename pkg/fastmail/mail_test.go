@@ -129,13 +129,13 @@ func TestMailService_List(t *testing.T) {
 
 	assert.Equal(t, "email1", emails[0].ID)
 	assert.Equal(t, "Hello World", emails[0].Subject)
-	assert.True(t, emails[0].IsRead)
-	assert.False(t, emails[0].IsFlagged)
+	assert.True(t, emails[0].IsRead())
+	assert.False(t, emails[0].IsFlagged())
 
 	assert.Equal(t, "email2", emails[1].ID)
 	assert.Equal(t, "Another Email", emails[1].Subject)
-	assert.False(t, emails[1].IsRead)
-	assert.True(t, emails[1].IsFlagged)
+	assert.False(t, emails[1].IsRead())
+	assert.True(t, emails[1].IsFlagged())
 }
 
 func TestMailService_Get(t *testing.T) {
@@ -181,8 +181,8 @@ func TestMailService_Get(t *testing.T) {
 
 	assert.Equal(t, "email123", email.ID)
 	assert.Equal(t, "Test Subject", email.Subject)
-	assert.True(t, email.IsRead)
-	assert.True(t, email.IsFlagged)
+	assert.True(t, email.IsRead())
+	assert.True(t, email.IsFlagged())
 }
 
 func TestMailService_Get_NotFound(t *testing.T) {
