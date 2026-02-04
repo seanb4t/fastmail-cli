@@ -165,6 +165,196 @@ func TestExportJSONL(t *testing.T) {
 	})
 }
 
+func TestExportMbox(t *testing.T) {
+	t.Run("empty slice produces no output", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := ExportMbox(&buf, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if buf.Len() != 0 {
+			t.Errorf("expected empty output, got %q", buf.String())
+		}
+	})
+
+	t.Run("single email has From envelope line", func(t *testing.T) {
+		var buf bytes.Buffer
+		emails := []Email{
+			{
+				ID:         "email-1",
+				Subject:    "Test Subject",
+				From:       EmailAddress{Email: "alice@example.com"},
+				ReceivedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+				Body:       "Hello",
+			},
+		}
+
+		err := ExportMbox(&buf, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		// Mbox format starts with "From sender timestamp"
+		if !strings.HasPrefix(output, "From alice@example.com ") {
+			t.Errorf("expected mbox to start with 'From sender ', got %q", output[:min(50, len(output))])
+		}
+	})
+
+	t.Run("From envelope uses ANSIC timestamp format", func(t *testing.T) {
+		var buf bytes.Buffer
+		emails := []Email{
+			{
+				ID:         "email-1",
+				From:       EmailAddress{Email: "test@example.com"},
+				ReceivedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+			},
+		}
+
+		err := ExportMbox(&buf, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		// ANSIC format: Mon Jan _2 15:04:05 2006
+		expected := "From test@example.com Mon Jan 15 10:30:00 2024"
+		if !strings.HasPrefix(output, expected) {
+			t.Errorf("expected envelope %q, got %q", expected, output[:min(60, len(output))])
+		}
+	})
+
+	t.Run("missing sender uses MAILER-DAEMON", func(t *testing.T) {
+		var buf bytes.Buffer
+		emails := []Email{
+			{
+				ID:         "email-1",
+				ReceivedAt: time.Now(),
+			},
+		}
+
+		err := ExportMbox(&buf, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		if !strings.HasPrefix(output, "From MAILER-DAEMON ") {
+			t.Errorf("expected MAILER-DAEMON for missing sender, got %q", output[:min(30, len(output))])
+		}
+	})
+
+	t.Run("From lines in body are quoted", func(t *testing.T) {
+		var buf bytes.Buffer
+		emails := []Email{
+			{
+				ID:         "email-1",
+				From:       EmailAddress{Email: "test@example.com"},
+				ReceivedAt: time.Now(),
+				Body:       "Hello\nFrom someone@example.com Mon Jan 1 00:00:00 2024\nMore text",
+			},
+		}
+
+		err := ExportMbox(&buf, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		// The "From " line in the body should be quoted with ">"
+		if !strings.Contains(output, ">From someone@example.com") {
+			t.Errorf("From line in body should be quoted with >, got:\n%s", output)
+		}
+	})
+
+	t.Run("multiple emails separated by blank lines", func(t *testing.T) {
+		var buf bytes.Buffer
+		emails := []Email{
+			{ID: "email-1", From: EmailAddress{Email: "a@example.com"}, ReceivedAt: time.Now(), Body: "First"},
+			{ID: "email-2", From: EmailAddress{Email: "b@example.com"}, ReceivedAt: time.Now(), Body: "Second"},
+		}
+
+		err := ExportMbox(&buf, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		// Count "From " lines at start of lines (envelope lines)
+		lines := strings.Split(output, "\n")
+		fromCount := 0
+		for _, line := range lines {
+			if strings.HasPrefix(line, "From ") && !strings.HasPrefix(line, "From:") {
+				fromCount++
+			}
+		}
+		if fromCount != 2 {
+			t.Errorf("expected 2 From envelope lines, got %d", fromCount)
+		}
+
+		// Messages should be separated by blank line
+		if !strings.Contains(output, "\n\nFrom ") {
+			t.Error("messages should be separated by blank line before From envelope")
+		}
+	})
+
+	t.Run("contains RFC 5322 headers", func(t *testing.T) {
+		var buf bytes.Buffer
+		emails := []Email{
+			{
+				ID:         "email-1",
+				Subject:    "Test Subject",
+				From:       EmailAddress{Name: "Alice", Email: "alice@example.com"},
+				To:         []EmailAddress{{Name: "Bob", Email: "bob@example.com"}},
+				ReceivedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+				Body:       "Hello, World!",
+			},
+		}
+
+		err := ExportMbox(&buf, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		if !strings.Contains(output, "From:") {
+			t.Error("should contain From: header")
+		}
+		if !strings.Contains(output, "To:") {
+			t.Error("should contain To: header")
+		}
+		if !strings.Contains(output, "Subject:") {
+			t.Error("should contain Subject: header")
+		}
+		if !strings.Contains(output, "Date:") {
+			t.Error("should contain Date: header")
+		}
+	})
+
+	t.Run("uses LF line endings", func(t *testing.T) {
+		var buf bytes.Buffer
+		emails := []Email{
+			{
+				ID:         "email-1",
+				From:       EmailAddress{Email: "test@example.com"},
+				ReceivedAt: time.Now(),
+				Body:       "Line 1\nLine 2",
+			},
+		}
+
+		err := ExportMbox(&buf, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		// Mbox uses Unix LF endings, not CRLF
+		if strings.Contains(output, "\r\n") {
+			t.Error("mbox should use LF line endings, not CRLF")
+		}
+	})
+}
+
 func TestExportMaildir(t *testing.T) {
 	t.Run("creates maildir directory structure", func(t *testing.T) {
 		dir := t.TempDir()
