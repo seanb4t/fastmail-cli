@@ -1,8 +1,21 @@
 // Package cli implements the command-line interface.
 package cli
 
+import (
+	"errors"
+	"os"
+)
+
 // Execute runs the root command.
-// Returns an error if command execution fails.
+// Handles exit codes for AuthStatusError, calling os.Exit directly.
 func Execute() error {
-	return NewRootCommand().Execute()
+	err := NewRootCommand().Execute()
+	if err != nil {
+		var authErr *AuthStatusError
+		if errors.As(err, &authErr) {
+			os.Exit(authErr.Code)
+		}
+		return err
+	}
+	return nil
 }
