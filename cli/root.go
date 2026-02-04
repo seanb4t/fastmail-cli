@@ -15,9 +15,13 @@ type RootCommand struct {
 	Quiet      bool
 }
 
+// global instance for flag access from subcommands
+var rootCmd *RootCommand
+
 // NewRootCommand creates and configures the root command.
 func NewRootCommand() *RootCommand {
 	root := &RootCommand{}
+	rootCmd = root
 
 	root.cmd = &cobra.Command{
 		Use:   "fastmail-cli",
@@ -37,14 +41,34 @@ func NewRootCommand() *RootCommand {
 	root.cmd.PersistentFlags().BoolVar(&root.JSONOutput, "json", false, "output as JSON")
 	root.cmd.PersistentFlags().BoolVar(&root.Quiet, "quiet", false, "suppress output")
 
-	// Add auth subcommand placeholder
-	authCmd := &cobra.Command{
-		Use:   "auth",
-		Short: "Authentication commands",
-	}
-	root.cmd.AddCommand(authCmd)
+	// Add subcommands
+	root.cmd.AddCommand(newAuthCommand())
 
 	return root
+}
+
+// GetConfigPath returns the current config file path.
+func GetConfigPath() string {
+	if rootCmd != nil {
+		return rootCmd.ConfigFile
+	}
+	return ""
+}
+
+// IsJSONOutput returns whether JSON output is enabled.
+func IsJSONOutput() bool {
+	if rootCmd != nil {
+		return rootCmd.JSONOutput
+	}
+	return false
+}
+
+// IsQuiet returns whether quiet mode is enabled.
+func IsQuiet() bool {
+	if rootCmd != nil {
+		return rootCmd.Quiet
+	}
+	return false
 }
 
 // Execute runs the root command.
