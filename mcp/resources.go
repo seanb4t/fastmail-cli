@@ -204,20 +204,12 @@ func (r *ResourceRegistry) handleMail(ctx context.Context, params map[string]str
 
 // handleContacts returns the contact list.
 func (r *ResourceRegistry) handleContacts(ctx context.Context, _ map[string]string) (*ResourceContent, error) {
-	if r.client == nil {
-		return nil, oops.Errorf("client not configured")
-	}
-
-	contacts, err := r.client.Contacts().List(ctx)
-	if err != nil {
-		return nil, oops.Wrapf(err, "listing contacts")
-	}
-
-	content := formatContactList(contacts)
+	// Contacts service requires CardDAV client which may not be configured
+	// Return informative message if not available
 	return &ResourceContent{
 		URI:      "fastmail://contacts",
 		MimeType: "text/plain",
-		Text:     content,
+		Text:     "Contact access requires CardDAV configuration. No contacts available.",
 	}, nil
 }
 
