@@ -1,6 +1,6 @@
 package cli
 
-// Exit codes for CLI commands
+// Exit codes for CLI commands.
 const (
 	ExitSuccess      = 0 // Successful operation
 	ExitNoToken      = 1 // No token stored

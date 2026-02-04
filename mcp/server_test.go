@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,6 +13,35 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// runServer runs server.Run in a goroutine and waits for it to finish processing
+// the input before returning the output buffer. This avoids data races from
+// concurrent reads/writes to the shared bytes.Buffer.
+func runServer(t *testing.T, server *Server, input string) *bytes.Buffer {
+	t.Helper()
+	output := &bytes.Buffer{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- server.Run(ctx, strings.NewReader(input), output)
+	}()
+
+	select {
+	case err := <-done:
+		// EOF is expected (nil error) when the input is fully consumed
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("server.Run returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("server.Run did not finish in time")
+	}
+
+	return output
+}
 
 func TestNewServer(t *testing.T) {
 	server := NewServer("test-server", "1.0.0")
@@ -67,19 +97,7 @@ func TestServer_Initialize(t *testing.T) {
 	server := NewServer("fastmail-mcp", "1.0.0")
 
 	input := `{"jsonrpc":"2.0","id":"init-1","method":"initialize","params":{}}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	// Run server in goroutine with input that ends
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	// Wait for response
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	// Parse response
 	var resp Response
@@ -115,17 +133,7 @@ func TestServer_ToolsList(t *testing.T) {
 	server.RegisterTool(tool2, func(_ context.Context, _ map[string]any) (any, error) { return nil, nil })
 
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -161,17 +169,7 @@ func TestServer_ToolsCall(t *testing.T) {
 	})
 
 	input := `{"jsonrpc":"2.0","id":"call-1","method":"tools/call","params":{"name":"echo","arguments":{"message":"hello"}}}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -199,17 +197,7 @@ func TestServer_ToolsCall_Error(t *testing.T) {
 	})
 
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"failing_tool"}}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -229,17 +217,7 @@ func TestServer_ToolsCall_UnknownTool(t *testing.T) {
 	server := NewServer("test", "1.0.0")
 
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nonexistent"}}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -266,17 +244,7 @@ func TestServer_ResourcesList(t *testing.T) {
 	server.RegisterResource(res2, dummyReader)
 
 	input := `{"jsonrpc":"2.0","id":1,"method":"resources/list"}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -313,17 +281,7 @@ func TestServer_ResourcesRead(t *testing.T) {
 	})
 
 	input := `{"jsonrpc":"2.0","id":"read-1","method":"resources/read","params":{"uri":"fastmail://inbox"}}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -344,17 +302,7 @@ func TestServer_ResourcesRead_UnknownResource(t *testing.T) {
 	server := NewServer("test", "1.0.0")
 
 	input := `{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"unknown://resource"}}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -368,17 +316,7 @@ func TestServer_MethodNotFound(t *testing.T) {
 	server := NewServer("test", "1.0.0")
 
 	input := `{"jsonrpc":"2.0","id":1,"method":"unknown/method"}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -391,17 +329,7 @@ func TestServer_ParseError(t *testing.T) {
 	server := NewServer("test", "1.0.0")
 
 	input := `{invalid json}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -415,17 +343,7 @@ func TestServer_Notification(t *testing.T) {
 
 	// Notification has no ID - should not produce a response
 	input := `{"jsonrpc":"2.0","method":"notifications/initialized"}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	// No response expected for notifications
 	assert.Empty(t, output.String())
@@ -474,17 +392,7 @@ func TestServer_MultipleRequests(t *testing.T) {
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":3}}}
 `
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input), output)
-	}()
-
-	time.Sleep(200 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input)
 
 	// Parse all responses
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
@@ -514,17 +422,7 @@ func TestServer_ToolsCall_JSONResult(t *testing.T) {
 	})
 
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_status"}}`
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input+"\n"), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input+"\n")
 
 	var resp Response
 	err := json.Unmarshal(output.Bytes(), &resp)
@@ -548,17 +446,7 @@ func TestServer_EmptyLines(t *testing.T) {
 {"jsonrpc":"2.0","id":1,"method":"initialize"}
 
 `
-	output := &bytes.Buffer{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	go func() {
-		_ = server.Run(ctx, strings.NewReader(input), output)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	cancel()
+	output := runServer(t, server, input)
 
 	// Should have exactly one response
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")

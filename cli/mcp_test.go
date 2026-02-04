@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -111,7 +112,7 @@ func TestMCPServerToolsList(t *testing.T) {
 		WithProperty("param1", "string", "Test parameter").
 		WithRequired("param1")
 
-	server.RegisterTool(testTool, func(ctx context.Context, args map[string]any) (any, error) {
+	server.RegisterTool(testTool, func(_ context.Context, _ map[string]any) (any, error) {
 		return map[string]string{"result": "ok"}, nil
 	})
 
@@ -157,7 +158,7 @@ func TestMCPServerToolsCall(t *testing.T) {
 		WithProperty("message", "string", "Message to echo").
 		WithRequired("message")
 
-	server.RegisterTool(testTool, func(ctx context.Context, args map[string]any) (any, error) {
+	server.RegisterTool(testTool, func(_ context.Context, args map[string]any) (any, error) {
 		msg, _ := args["message"].(string)
 		return map[string]string{"echo": msg}, nil
 	})
@@ -221,13 +222,13 @@ func TestMCPServerGracefulShutdown(t *testing.T) {
 	// Cancel context and close pipe to trigger shutdown
 	// The server reads from input in a loop, so closing the pipe allows it to exit
 	cancel()
-	pw.Close()
+	_ = pw.Close()
 
 	// Wait for server to stop
 	select {
 	case err := <-done:
 		// Server should return nil on clean EOF shutdown or context.Canceled
-		assert.True(t, err == nil || err == context.Canceled, "expected nil or context.Canceled, got: %v", err)
+		assert.True(t, err == nil || errors.Is(err, context.Canceled), "expected nil or context.Canceled, got: %v", err)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("server did not shut down gracefully")
 	}
@@ -343,7 +344,7 @@ func TestToolHandlerValidation(t *testing.T) {
 			WithProperty("id", "string", "Email ID").
 			WithRequired("id")
 
-		server.RegisterTool(getTool, func(ctx context.Context, args map[string]any) (any, error) {
+		server.RegisterTool(getTool, func(_ context.Context, args map[string]any) (any, error) {
 			id, ok := args["id"].(string)
 			if !ok || id == "" {
 				return nil, fmt.Errorf("id is required")

@@ -120,11 +120,11 @@ func createMockCardDAVServer(_ *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 
-		switch {
-		case r.Method == "PROPFIND":
+		switch r.Method {
+		case "PROPFIND":
 			w.WriteHeader(http.StatusMultiStatus)
 			_, _ = w.Write([]byte(mockAddressBooksResponse))
-		case r.Method == "REPORT":
+		case "REPORT":
 			w.WriteHeader(http.StatusMultiStatus)
 			_, _ = w.Write([]byte(mockContactsQueryResponse))
 		default:

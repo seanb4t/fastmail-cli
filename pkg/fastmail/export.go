@@ -55,7 +55,7 @@ func ExportMaildir(dir string, emails []Email) error {
 }
 
 // maildirFilename generates a Maildir-compliant filename.
-// Format: timestamp.unique.hostname:2,flags
+// Format: timestamp.unique.hostname:2,flags.
 func maildirFilename(email Email, seq int, hostname string) string {
 	timestamp := email.ReceivedAt.Unix()
 	if timestamp <= 0 {

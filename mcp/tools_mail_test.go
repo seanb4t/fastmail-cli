@@ -1,69 +1,12 @@
 package mcp
 
 import (
-	"context"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
-
-// mockMailService implements mail operations for testing.
-type mockMailService struct {
-	emails     []fastmail.Email
-	sentEmails []fastmail.SendOptions
-	replies    []fastmail.ReplyOptions
-	moved      map[string]string
-	deleted    []string
-}
-
-func (m *mockMailService) List(_ context.Context, folder string, limit uint64) ([]fastmail.Email, error) {
-	if limit == 0 {
-		limit = 10
-	}
-	result := make([]fastmail.Email, 0, limit)
-	for i := 0; i < int(limit) && i < len(m.emails); i++ {
-		result = append(result, m.emails[i])
-	}
-	return result, nil
-}
-
-func (m *mockMailService) Get(_ context.Context, id string) (*fastmail.Email, error) {
-	for _, e := range m.emails {
-		if e.ID == id {
-			return &e, nil
-		}
-	}
-	return nil, nil
-}
-
-func (m *mockMailService) Search(_ context.Context, query string, limit uint64) ([]fastmail.Email, error) {
-	return m.emails, nil
-}
-
-func (m *mockMailService) Send(_ context.Context, opts fastmail.SendOptions) (string, error) {
-	m.sentEmails = append(m.sentEmails, opts)
-	return "sent-email-id", nil
-}
-
-func (m *mockMailService) Reply(_ context.Context, opts fastmail.ReplyOptions) (string, error) {
-	m.replies = append(m.replies, opts)
-	return "reply-email-id", nil
-}
-
-func (m *mockMailService) Move(_ context.Context, id, folder string) error {
-	if m.moved == nil {
-		m.moved = make(map[string]string)
-	}
-	m.moved[id] = folder
-	return nil
-}
-
-func (m *mockMailService) Delete(_ context.Context, id string) error {
-	m.deleted = append(m.deleted, id)
-	return nil
-}
 
 func TestRegisterMailTools(t *testing.T) {
 	server := NewServer("test", "1.0")
@@ -313,7 +256,7 @@ func TestHelperFunctions(t *testing.T) {
 	})
 }
 
-func TestMCPEmailConversion(t *testing.T) {
+func TestEmailConversion(t *testing.T) {
 	now := time.Now()
 	email := fastmail.Email{
 		ID:         "email-123",
@@ -348,7 +291,7 @@ func TestMCPEmailConversion(t *testing.T) {
 	}
 }
 
-func TestMCPEventConversion(t *testing.T) {
+func TestEventConversion(t *testing.T) {
 	now := time.Now()
 	event := fastmail.Event{
 		ID:          "event-123",

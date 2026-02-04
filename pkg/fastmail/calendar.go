@@ -44,8 +44,7 @@ func (c *Calendar) IsReadOnly() bool {
 
 // CalendarService provides calendar operations.
 type CalendarService struct {
-	client *Client
-	dav    *dav.Client
+	dav *dav.Client
 }
 
 // ListCalendars returns all calendars for the user.

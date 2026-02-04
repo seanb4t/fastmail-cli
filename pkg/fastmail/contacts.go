@@ -11,7 +11,6 @@ import (
 // ContactsService provides contact management operations via the Fastmail client.
 // This wraps ContactsClient functionality for use with the Client API.
 type ContactsService struct {
-	client    *Client
 	davClient *dav.CardDAVClient
 }
 

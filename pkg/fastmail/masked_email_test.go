@@ -173,7 +173,12 @@ func TestMaskedEmailService_Create(t *testing.T) {
 	assert.Equal(t, MaskedEmailStateEnabled, maskedEmail.State)
 }
 
-func TestMaskedEmailService_Enable(t *testing.T) {
+// runMaskedEmailStateChangeServiceTest is a shared helper for Enable/Disable service tests
+// to avoid code duplication. It sets up a mock API that verifies the MaskedEmail/set
+// method call and state update payload.
+func runMaskedEmailStateChangeServiceTest(t *testing.T, meID, expectedState string, callService func(context.Context, *Client, string) error) {
+	t.Helper()
+
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		err := json.NewDecoder(r.Body).Decode(&req)
@@ -188,8 +193,8 @@ func TestMaskedEmailService_Enable(t *testing.T) {
 
 		// Verify update payload
 		update := args["update"].(map[string]any)
-		meUpdate := update["me-disabled-1"].(map[string]any)
-		assert.Equal(t, "enabled", meUpdate["state"])
+		meUpdate := update[meID].(map[string]any)
+		assert.Equal(t, expectedState, meUpdate["state"])
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -200,9 +205,9 @@ func TestMaskedEmailService_Enable(t *testing.T) {
 					"oldState": "me1",
 					"newState": "me2",
 					"updated": {
-						"me-disabled-1": {
-							"id": "me-disabled-1",
-							"state": "enabled"
+						"` + meID + `": {
+							"id": "` + meID + `",
+							"state": "` + expectedState + `"
 						}
 					}
 				}, "0"]
@@ -220,59 +225,22 @@ func TestMaskedEmailService_Enable(t *testing.T) {
 	client := NewClient(sessionServer.URL, "test-token")
 	ctx := context.Background()
 
-	err := client.MaskedEmail().Enable(ctx, "me-disabled-1")
+	err := callService(ctx, client, meID)
 	require.NoError(t, err)
 }
 
+func TestMaskedEmailService_Enable(t *testing.T) {
+	runMaskedEmailStateChangeServiceTest(t, "me-disabled-1", "enabled",
+		func(ctx context.Context, c *Client, id string) error {
+			return c.MaskedEmail().Enable(ctx, id)
+		})
+}
+
 func TestMaskedEmailService_Disable(t *testing.T) {
-	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		err := json.NewDecoder(r.Body).Decode(&req)
-		require.NoError(t, err)
-
-		methodCalls := req["methodCalls"].([]any)
-		firstCall := methodCalls[0].([]any)
-		methodName := firstCall[0].(string)
-		args := firstCall[1].(map[string]any)
-
-		assert.Equal(t, "MaskedEmail/set", methodName)
-
-		// Verify update payload
-		update := args["update"].(map[string]any)
-		meUpdate := update["me-enabled-1"].(map[string]any)
-		assert.Equal(t, "disabled", meUpdate["state"])
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"sessionState": "s1",
-			"methodResponses": [
-				["MaskedEmail/set", {
-					"accountId": "acc1",
-					"oldState": "me1",
-					"newState": "me2",
-					"updated": {
-						"me-enabled-1": {
-							"id": "me-enabled-1",
-							"state": "disabled"
-						}
-					}
-				}, "0"]
-			]
-		}`))
-	}))
-	defer apiServer.Close()
-
-	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(maskedEmailSessionResponse(apiServer.URL)))
-	}))
-	defer sessionServer.Close()
-
-	client := NewClient(sessionServer.URL, "test-token")
-	ctx := context.Background()
-
-	err := client.MaskedEmail().Disable(ctx, "me-enabled-1")
-	require.NoError(t, err)
+	runMaskedEmailStateChangeServiceTest(t, "me-enabled-1", "disabled",
+		func(ctx context.Context, c *Client, id string) error {
+			return c.MaskedEmail().Disable(ctx, id)
+		})
 }
 
 func TestMaskedEmailService_Delete(t *testing.T) {

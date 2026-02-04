@@ -11,6 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// JMAP method name constants used in test assertions and mock handlers.
+const (
+	testMethodMailboxGet = "Mailbox/get"
+	testMethodEmailGet   = "Email/get"
+	testMethodEmailSet   = "Email/set"
+)
+
 // sessionResponse returns a valid JMAP session for testing.
 func sessionResponse(apiURL string) string {
 	return `{
@@ -50,7 +57,7 @@ func TestMailService_List(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 
-		if methodName == "Mailbox/get" {
+		if methodName == testMethodMailboxGet {
 			// Return mailboxes response
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
@@ -294,7 +301,7 @@ func TestMailService_Move(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch methodName {
-		case "Mailbox/get":
+		case testMethodMailboxGet:
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
 				"methodResponses": [
@@ -309,7 +316,7 @@ func TestMailService_Move(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/get":
+		case testMethodEmailGet:
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
 				"methodResponses": [
@@ -332,7 +339,7 @@ func TestMailService_Move(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/set":
+		case testMethodEmailSet:
 			// Verify the update payload
 			args := firstCall[1].(map[string]any)
 			update := args["update"].(map[string]any)
@@ -382,7 +389,7 @@ func TestMailService_Delete_MovesToTrash(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch methodName {
-		case "Mailbox/get":
+		case testMethodMailboxGet:
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
 				"methodResponses": [
@@ -397,7 +404,7 @@ func TestMailService_Delete_MovesToTrash(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/get":
+		case testMethodEmailGet:
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
 				"methodResponses": [
@@ -420,7 +427,7 @@ func TestMailService_Delete_MovesToTrash(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/set":
+		case testMethodEmailSet:
 			args := firstCall[1].(map[string]any)
 			// Should be an update (move to trash), not destroy
 			_, hasUpdate := args["update"]
@@ -467,7 +474,7 @@ func TestMailService_Delete_PermanentlyDestroysFromTrash(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch methodName {
-		case "Mailbox/get":
+		case testMethodMailboxGet:
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
 				"methodResponses": [
@@ -482,7 +489,7 @@ func TestMailService_Delete_PermanentlyDestroysFromTrash(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/get":
+		case testMethodEmailGet:
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
 				"methodResponses": [
@@ -505,7 +512,7 @@ func TestMailService_Delete_PermanentlyDestroysFromTrash(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/set":
+		case testMethodEmailSet:
 			args := firstCall[1].(map[string]any)
 			// Should be a destroy, not update
 			destroy, hasDestroy := args["destroy"].([]any)
@@ -652,7 +659,7 @@ func TestMailService_Send(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Mailbox/get":
+		case testMethodMailboxGet:
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
 				"methodResponses": [
@@ -667,7 +674,7 @@ func TestMailService_Send(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/set":
+		case testMethodEmailSet:
 			// Verify the create payload has required fields
 			args := firstCall[1].(map[string]any)
 			create := args["create"].(map[string]any)
@@ -759,7 +766,7 @@ func TestMailService_Reply(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/get":
+		case testMethodEmailGet:
 			args := firstCall[1].(map[string]any)
 			ids := args["ids"].([]any)
 			if ids[0] == "original-email-123" {
@@ -793,7 +800,7 @@ func TestMailService_Reply(t *testing.T) {
 					]
 				}`))
 			}
-		case "Mailbox/get":
+		case testMethodMailboxGet:
 			_, _ = w.Write([]byte(`{
 				"sessionState": "s1",
 				"methodResponses": [
@@ -807,7 +814,7 @@ func TestMailService_Reply(t *testing.T) {
 					}, "0"]
 				]
 			}`))
-		case "Email/set":
+		case testMethodEmailSet:
 			// Verify the reply has proper threading
 			args := firstCall[1].(map[string]any)
 			create := args["create"].(map[string]any)

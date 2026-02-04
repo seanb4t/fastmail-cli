@@ -206,7 +206,7 @@ func (c *Client) CreateEvent(ctx context.Context, calendarID string, event *Even
 }
 
 // UpdateEvent updates an existing event.
-func (c *Client) UpdateEvent(ctx context.Context, calendarID string, event *Event) error {
+func (c *Client) UpdateEvent(ctx context.Context, _ string, event *Event) error {
 	client, err := c.getClient(ctx)
 	if err != nil {
 		return fmt.Errorf("getting caldav client: %w", err)
@@ -237,7 +237,7 @@ func (c *Client) DeleteEvent(ctx context.Context, eventID string) error {
 	return nil
 }
 
-func (c *Client) getClient(ctx context.Context) (*caldav.Client, error) {
+func (c *Client) getClient(_ context.Context) (*caldav.Client, error) {
 	if c.caldav != nil {
 		return c.caldav, nil
 	}

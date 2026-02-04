@@ -60,7 +60,7 @@ func TestCalendar_IsReadOnly(t *testing.T) {
 
 // CalendarServiceInterface defines the contract that CalendarService must implement.
 // This test ensures the interface is satisfied.
-func TestCalendarService_ImplementsInterface(t *testing.T) {
+func TestCalendarService_ImplementsInterface(_ *testing.T) {
 	// This is a compile-time check that CalendarService implements the expected methods
 	var _ interface {
 		ListCalendars(ctx context.Context) ([]Calendar, error)

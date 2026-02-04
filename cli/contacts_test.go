@@ -128,14 +128,14 @@ carddav_username: "test@example.com"`
 
 	// Set token via env var
 	originalEnv := os.Getenv("FASTMAIL_TOKEN")
-	os.Setenv("FASTMAIL_TOKEN", "test-token")
+	_ = os.Setenv("FASTMAIL_TOKEN", "test-token")
 
 	cleanup := func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		if originalEnv != "" {
-			os.Setenv("FASTMAIL_TOKEN", originalEnv)
+			_ = os.Setenv("FASTMAIL_TOKEN", originalEnv)
 		} else {
-			os.Unsetenv("FASTMAIL_TOKEN")
+			_ = os.Unsetenv("FASTMAIL_TOKEN")
 		}
 	}
 
@@ -347,7 +347,7 @@ func TestContactsCommand_NoAuth(t *testing.T) {
 	// Create temp directory for config without token
 	tempDir, err := os.MkdirTemp("", "fastmail-cli-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	configPath := filepath.Join(tempDir, "config.yaml")
 	configContent := `carddav_endpoint: "https://example.com"
@@ -357,10 +357,10 @@ carddav_username: "test@example.com"`
 
 	// Unset token env var
 	originalEnv := os.Getenv("FASTMAIL_TOKEN")
-	os.Unsetenv("FASTMAIL_TOKEN")
+	_ = os.Unsetenv("FASTMAIL_TOKEN")
 	defer func() {
 		if originalEnv != "" {
-			os.Setenv("FASTMAIL_TOKEN", originalEnv)
+			_ = os.Setenv("FASTMAIL_TOKEN", originalEnv)
 		}
 	}()
 
@@ -381,7 +381,7 @@ func TestContactsCommand_NoUsername(t *testing.T) {
 	// Create temp directory for config without username
 	tempDir, err := os.MkdirTemp("", "fastmail-cli-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	configPath := filepath.Join(tempDir, "config.yaml")
 	configContent := `carddav_endpoint: "` + server.URL + `"`
@@ -390,12 +390,12 @@ func TestContactsCommand_NoUsername(t *testing.T) {
 
 	// Set token via env var
 	originalEnv := os.Getenv("FASTMAIL_TOKEN")
-	os.Setenv("FASTMAIL_TOKEN", "test-token")
+	_ = os.Setenv("FASTMAIL_TOKEN", "test-token")
 	defer func() {
 		if originalEnv != "" {
-			os.Setenv("FASTMAIL_TOKEN", originalEnv)
+			_ = os.Setenv("FASTMAIL_TOKEN", originalEnv)
 		} else {
-			os.Unsetenv("FASTMAIL_TOKEN")
+			_ = os.Unsetenv("FASTMAIL_TOKEN")
 		}
 	}()
 

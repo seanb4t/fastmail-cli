@@ -56,14 +56,14 @@ func setupMaskedEmailTestEnv(t *testing.T, sessionURL string) (string, func()) {
 
 	// Set token via env var
 	originalEnv := os.Getenv("FASTMAIL_TOKEN")
-	os.Setenv("FASTMAIL_TOKEN", "test-token")
+	_ = os.Setenv("FASTMAIL_TOKEN", "test-token")
 
 	cleanup := func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		if originalEnv != "" {
-			os.Setenv("FASTMAIL_TOKEN", originalEnv)
+			_ = os.Setenv("FASTMAIL_TOKEN", originalEnv)
 		} else {
-			os.Unsetenv("FASTMAIL_TOKEN")
+			_ = os.Unsetenv("FASTMAIL_TOKEN")
 		}
 	}
 
@@ -242,7 +242,12 @@ func TestMaskedEmailCreateCommand(t *testing.T) {
 	assert.Contains(t, output, "newaddr@fastmail.com")
 }
 
-func TestMaskedEmailEnableCommand(t *testing.T) {
+// runMaskedEmailStateChangeTest is a shared helper for Enable/Disable command tests
+// to avoid code duplication. It sets up a mock API that verifies the state update
+// payload and asserts the expected CLI output.
+func runMaskedEmailStateChangeTest(t *testing.T, meID, expectedState, subcommand, expectedOutput string) {
+	t.Helper()
+
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		err := json.NewDecoder(r.Body).Decode(&req)
@@ -254,8 +259,8 @@ func TestMaskedEmailEnableCommand(t *testing.T) {
 
 		// Verify update payload
 		update := args["update"].(map[string]any)
-		meUpdate := update["me-123"].(map[string]any)
-		assert.Equal(t, "enabled", meUpdate["state"])
+		meUpdate := update[meID].(map[string]any)
+		assert.Equal(t, expectedState, meUpdate["state"])
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -265,7 +270,7 @@ func TestMaskedEmailEnableCommand(t *testing.T) {
 					"accountId": "acc1",
 					"oldState": "me1",
 					"newState": "me2",
-					"updated": {"me-123": null}
+					"updated": {"` + meID + `": null}
 				}, "0"]
 			]
 		}`))
@@ -285,65 +290,21 @@ func TestMaskedEmailEnableCommand(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--config", configPath, "masked-email", "enable", "me-123"})
+	cmd.SetArgs([]string{"--config", configPath, "masked-email", subcommand, meID})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
 
 	output := out.String()
-	assert.Contains(t, output, "Enabled")
+	assert.Contains(t, output, expectedOutput)
+}
+
+func TestMaskedEmailEnableCommand(t *testing.T) {
+	runMaskedEmailStateChangeTest(t, "me-123", "enabled", "enable", "Enabled")
 }
 
 func TestMaskedEmailDisableCommand(t *testing.T) {
-	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		err := json.NewDecoder(r.Body).Decode(&req)
-		require.NoError(t, err)
-
-		methodCalls := req["methodCalls"].([]any)
-		firstCall := methodCalls[0].([]any)
-		args := firstCall[1].(map[string]any)
-
-		// Verify update payload
-		update := args["update"].(map[string]any)
-		meUpdate := update["me-456"].(map[string]any)
-		assert.Equal(t, "disabled", meUpdate["state"])
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"sessionState": "s1",
-			"methodResponses": [
-				["MaskedEmail/set", {
-					"accountId": "acc1",
-					"oldState": "me1",
-					"newState": "me2",
-					"updated": {"me-456": null}
-				}, "0"]
-			]
-		}`))
-	}))
-	defer apiServer.Close()
-
-	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(maskedEmailSessionResponse(apiServer.URL)))
-	}))
-	defer sessionServer.Close()
-
-	configPath, cleanup := setupMaskedEmailTestEnv(t, sessionServer.URL)
-	defer cleanup()
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--config", configPath, "masked-email", "disable", "me-456"})
-
-	err := cmd.Execute()
-	require.NoError(t, err)
-
-	output := out.String()
-	assert.Contains(t, output, "Disabled")
+	runMaskedEmailStateChangeTest(t, "me-456", "disabled", "disable", "Disabled")
 }
 
 func TestMaskedEmailDeleteCommand(t *testing.T) {

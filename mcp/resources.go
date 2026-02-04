@@ -214,7 +214,7 @@ func (r *ResourceRegistry) handleContacts(_ context.Context, _ map[string]string
 }
 
 // handleCalendarToday returns today's calendar events.
-func (r *ResourceRegistry) handleCalendarToday(ctx context.Context, _ map[string]string) (*ResourceContent, error) {
+func (r *ResourceRegistry) handleCalendarToday(_ context.Context, _ map[string]string) (*ResourceContent, error) {
 	// Calendar service requires DAV client which may not be configured
 	// Return informative message if not available
 	return &ResourceContent{

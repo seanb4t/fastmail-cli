@@ -27,7 +27,7 @@ func newMCPCommand() *cobra.Command {
 }
 
 // runMCPServer initializes and runs the MCP server.
-func runMCPServer(cmd *cobra.Command) error {
+func runMCPServer(_ *cobra.Command) error {
 	// Create fastmail client using existing auth
 	client, err := createClient()
 	if err != nil {

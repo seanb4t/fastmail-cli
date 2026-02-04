@@ -545,8 +545,8 @@ func makeCalendarCreateHandler(cfg ToolsConfig) ToolHandler {
 	}
 }
 
-// MCPEvent is the MCP representation of a calendar event.
-type MCPEvent struct {
+// Event is the MCP representation of a calendar event.
+type Event struct {
 	ID          string `json:"id"`
 	CalendarID  string `json:"calendar_id"`
 	Summary     string `json:"summary"`
@@ -558,8 +558,8 @@ type MCPEvent struct {
 	Status      string `json:"status,omitempty"`
 }
 
-func convertEventToMCP(e *fastmail.Event) *MCPEvent {
-	return &MCPEvent{
+func convertEventToMCP(e *fastmail.Event) *Event {
+	return &Event{
 		ID:          e.ID,
 		CalendarID:  e.CalendarID,
 		Summary:     e.Summary,
@@ -572,8 +572,8 @@ func convertEventToMCP(e *fastmail.Event) *MCPEvent {
 	}
 }
 
-func convertEventsToMCP(events []fastmail.Event) []*MCPEvent {
-	result := make([]*MCPEvent, len(events))
+func convertEventsToMCP(events []fastmail.Event) []*Event {
+	result := make([]*Event, len(events))
 	for i := range events {
 		result[i] = convertEventToMCP(&events[i])
 	}
@@ -595,11 +595,17 @@ func getUint64Arg(args map[string]any, key string, defaultValue uint64) uint64 {
 	if v, ok := args[key]; ok {
 		switch n := v.(type) {
 		case float64:
-			return uint64(n)
+			if n >= 0 {
+				return uint64(n)
+			}
 		case int:
-			return uint64(n)
+			if n >= 0 {
+				return uint64(n)
+			}
 		case int64:
-			return uint64(n)
+			if n >= 0 {
+				return uint64(n)
+			}
 		case uint64:
 			return n
 		}
@@ -642,8 +648,8 @@ func parseAddresses(addrs []string) []fastmail.EmailAddress {
 	return result
 }
 
-// MCPEmail is the MCP representation of an email.
-type MCPEmail struct {
+// Email is the MCP representation of an email.
+type Email struct {
 	ID         string   `json:"id"`
 	ThreadID   string   `json:"thread_id"`
 	Subject    string   `json:"subject"`
@@ -655,8 +661,8 @@ type MCPEmail struct {
 	Folders    []string `json:"folders"`
 }
 
-func convertEmailToMCP(e *fastmail.Email) *MCPEmail {
-	return &MCPEmail{
+func convertEmailToMCP(e *fastmail.Email) *Email {
+	return &Email{
 		ID:         e.ID,
 		ThreadID:   e.ThreadID,
 		Subject:    e.Subject,
@@ -669,8 +675,8 @@ func convertEmailToMCP(e *fastmail.Email) *MCPEmail {
 	}
 }
 
-func convertEmailsToMCP(emails []fastmail.Email) []*MCPEmail {
-	result := make([]*MCPEmail, len(emails))
+func convertEmailsToMCP(emails []fastmail.Email) []*Email {
+	result := make([]*Email, len(emails))
 	for i := range emails {
 		result[i] = convertEmailToMCP(&emails[i])
 	}

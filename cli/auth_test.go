@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +33,7 @@ func withMockJMAP(t *testing.T, handler func(w http.ResponseWriter, r *http.Requ
 		fn: func(req *http.Request) (*http.Response, error) {
 			// Forward to the test server
 			client := server.Client()
-			newReq, err := http.NewRequest(req.Method, server.URL+req.URL.Path, req.Body)
+			newReq, err := http.NewRequestWithContext(req.Context(), req.Method, server.URL+req.URL.Path, req.Body)
 			if err != nil {
 				return nil, err
 			}
@@ -144,7 +145,7 @@ func TestAuthStatus_ValidToken(t *testing.T) {
 }
 
 func TestAuthStatus_InvalidToken(t *testing.T) {
-	cleanup := withMockJMAP(t, func(w http.ResponseWriter, r *http.Request) {
+	cleanup := withMockJMAP(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error": "unauthorized"}`))
 	})
@@ -196,7 +197,7 @@ func TestAuthStatus_InvalidToken(t *testing.T) {
 func TestAuthStatus_NetworkError(t *testing.T) {
 	// Use a mock that returns network error
 	mockTransport := &mockRoundTripper{
-		fn: func(req *http.Request) (*http.Response, error) {
+		fn: func(_ *http.Request) (*http.Response, error) {
 			return nil, &mockNetError{msg: "connection refused"}
 		},
 	}
@@ -256,7 +257,7 @@ func (e *mockNetError) Timeout() bool   { return false }
 func (e *mockNetError) Temporary() bool { return false }
 
 func TestAuthStatus_ValidToken_JSON(t *testing.T) {
-	cleanup := withMockJMAP(t, func(w http.ResponseWriter, r *http.Request) {
+	cleanup := withMockJMAP(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"username": "user@fastmail.com",
@@ -444,7 +445,7 @@ func TestAuthLogin_StoresToken(t *testing.T) {
 
 	// Verify token was stored by reading the config file directly
 	// (not by running status, which would try to validate against API)
-	configContent, err := os.ReadFile(configPath)
+	configContent, err := os.ReadFile(filepath.Clean(configPath))
 	if err != nil {
 		t.Fatalf("failed to read config file: %v", err)
 	}
@@ -471,22 +472,19 @@ func TestAuthLogin_RequiresToken(t *testing.T) {
 	}
 }
 
-// errorAs is a helper to check error type (like errors.As but simpler for tests)
+// errorAs is a helper to check error type (like errors.As but simpler for tests).
 func errorAs(err error, target any) bool {
 	if err == nil {
 		return false
 	}
-	// For our AuthStatusError, just type assert
-	if authErr, ok := err.(*AuthStatusError); ok {
-		if t, ok := target.(**AuthStatusError); ok {
-			*t = authErr
-			return true
-		}
+	// Use errors.As for proper error unwrapping.
+	if t, ok := target.(**AuthStatusError); ok {
+		return errors.As(err, t)
 	}
 	return false
 }
 
-// Ensure exported httpClient is set and reset properly
+// Ensure exported httpClient is set and reset properly.
 func init() {
 	// Set up a way to inject mock HTTP client for testing
 	// The authStatusHTTPClient variable in auth.go handles this
