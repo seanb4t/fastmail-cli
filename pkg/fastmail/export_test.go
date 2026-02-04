@@ -3,6 +3,7 @@ package fastmail
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -161,4 +162,21 @@ func TestExportJSONL(t *testing.T) {
 			t.Errorf("expected 2 newlines, got %d", count)
 		}
 	})
+
+	t.Run("returns error on write failure", func(t *testing.T) {
+		w := &failWriter{}
+		emails := []Email{{ID: "email-1"}}
+
+		err := ExportJSONL(w, emails)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+// failWriter always returns an error on write.
+type failWriter struct{}
+
+func (f *failWriter) Write(p []byte) (n int, err error) {
+	return 0, io.ErrClosedPipe
 }
