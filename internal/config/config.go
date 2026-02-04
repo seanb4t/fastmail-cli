@@ -26,6 +26,12 @@ type Config struct {
 
 	// Token is the API token for authentication.
 	Token string `mapstructure:"token"`
+
+	// CardDAVEndpoint is the CardDAV server URL for contacts.
+	CardDAVEndpoint string `mapstructure:"carddav_endpoint"`
+
+	// CardDAVUsername is the username for CardDAV authentication.
+	CardDAVUsername string `mapstructure:"carddav_username"`
 }
 
 // DefaultConfigPath returns the default configuration file path.
@@ -46,6 +52,8 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("endpoint", "https://api.fastmail.com/jmap/session")
 	v.SetDefault("output_format", "auto")
 	v.SetDefault("token", "")
+	v.SetDefault("carddav_endpoint", "https://carddav.fastmail.com")
+	v.SetDefault("carddav_username", "")
 
 	// Configure environment variable binding
 	v.SetEnvPrefix("FASTMAIL")
