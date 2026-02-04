@@ -9,6 +9,18 @@ Define CLI commands and flags:
 - Subcommands for each feature area
 - Help and completion generation
 
+## Commands
+
+| File | Command | Description |
+|------|---------|-------------|
+| root.go | `fastmail` | Root command with global flags |
+| auth.go | `auth` | Configure API credentials |
+| mail.go | `mail` | Email operations (list, read, send, archive, flag) |
+| contacts.go | `contacts` | Contact management (list, search) |
+| masked_email.go | `masked-email` | Masked email operations (list, create, disable) |
+| export.go | `export` | Data export operations |
+| mcp.go | `mcp` | Start MCP server for AI agents |
+
 ## Key Types
 
 | Type | Description |
