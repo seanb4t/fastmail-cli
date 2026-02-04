@@ -47,6 +47,7 @@ func NewRootCommand() *RootCommand {
 	root.cmd.AddCommand(newMaskedEmailCommand())
 	root.cmd.AddCommand(newContactsCommand())
 	root.cmd.AddCommand(newExportCommand())
+	root.cmd.AddCommand(newMCPCommand())
 
 	return root
 }
