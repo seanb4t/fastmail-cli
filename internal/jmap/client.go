@@ -25,7 +25,7 @@ type Client struct {
 type ClientOption func(*Client)
 
 // WithHTTPClient sets a custom HTTP client for the JMAP client.
-// This is useful for testing with mock HTTP transports.
+// This is useful for testing with mock transports.
 func WithHTTPClient(httpClient *http.Client) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
