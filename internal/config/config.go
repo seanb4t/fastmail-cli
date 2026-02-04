@@ -1,0 +1,94 @@
+// Package config provides configuration management using Viper.
+//
+// Config sources (in priority order, highest to lowest):
+//  1. Environment variables (FASTMAIL_*)
+//  2. Config file (~/.config/fastmail-cli/config.yaml)
+//  3. Default values
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/viper"
+)
+
+// Config holds the application configuration.
+type Config struct {
+	// Endpoint is the JMAP session endpoint URL.
+	Endpoint string `mapstructure:"endpoint"`
+
+	// OutputFormat controls output rendering: auto, json, or text.
+	OutputFormat string `mapstructure:"output_format"`
+
+	// Token is the API token for authentication.
+	Token string `mapstructure:"token"`
+}
+
+// DefaultConfigPath returns the default configuration file path.
+func DefaultConfigPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "~"
+	}
+	return filepath.Join(homeDir, ".config", "fastmail-cli", "config.yaml")
+}
+
+// Load reads configuration from the given path and environment variables.
+// Environment variables take precedence over file values.
+func Load(configPath string) (*Config, error) {
+	v := viper.New()
+
+	// Set defaults
+	v.SetDefault("endpoint", "https://api.fastmail.com/jmap/session")
+	v.SetDefault("output_format", "auto")
+	v.SetDefault("token", "")
+
+	// Configure environment variable binding
+	v.SetEnvPrefix("FASTMAIL")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	// Try to read config file if it exists
+	v.SetConfigFile(configPath)
+	if err := v.ReadInConfig(); err != nil {
+		// Ignore "file not found" errors - config file is optional
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("reading config file: %w", err)
+			}
+		}
+	}
+
+	cfg := &Config{}
+	if err := v.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("unmarshaling config: %w", err)
+	}
+
+	// Validate the configuration
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// Validate checks that the configuration is valid.
+func (c *Config) Validate() error {
+	if c.Endpoint == "" {
+		return fmt.Errorf("endpoint is required")
+	}
+
+	validFormats := map[string]bool{
+		"auto": true,
+		"json": true,
+		"text": true,
+	}
+	if !validFormats[c.OutputFormat] {
+		return fmt.Errorf("output_format must be one of: auto, json, text (got %q)", c.OutputFormat)
+	}
+
+	return nil
+}
