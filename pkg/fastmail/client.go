@@ -52,7 +52,6 @@ func (c *Client) MaskedEmail() *MaskedEmailService {
 	}
 }
 
-
 // accountID returns the current account ID, fetching session if needed.
 func (c *Client) getAccountID(ctx context.Context) (string, error) {
 	if c.accountID != "" {
