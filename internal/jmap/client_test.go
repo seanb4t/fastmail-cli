@@ -168,3 +168,181 @@ func TestNewClient(t *testing.T) {
 	assert.Equal(t, "my-token", client.accessToken)
 	assert.NotNil(t, client.httpClient)
 }
+
+func TestClient_Call(t *testing.T) {
+	// Track requests to verify behavior
+	var receivedRequest map[string]any
+	var receivedAuth string
+
+	// First create the API server that will handle the Call
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth = r.Header.Get("Authorization")
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+		// Parse request body
+		err := json.NewDecoder(r.Body).Decode(&receivedRequest)
+		require.NoError(t, err)
+
+		// Return a valid JMAP response
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"sessionState": "state123",
+			"methodResponses": [
+				["Mailbox/get", {"accountId": "A1", "state": "m1", "list": [{"id": "inbox"}], "notFound": []}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	// Session server returns apiUrl pointing to our API server
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"capabilities": {"urn:ietf:params:jmap:core": {}},
+			"accounts": {"u1": {"name": "test", "isPersonal": true, "isReadOnly": false, "accountCapabilities": {}}},
+			"primaryAccounts": {},
+			"username": "test@example.com",
+			"apiUrl": "` + apiServer.URL + `",
+			"downloadUrl": "https://example.com/download",
+			"uploadUrl": "https://example.com/upload",
+			"eventSourceUrl": "https://example.com/events",
+			"state": "s1"
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token-abc")
+	ctx := context.Background()
+
+	// Build a request
+	req := NewRequest().WithCapabilities(CapCore, CapMail)
+	req.Invoke("Mailbox/get", map[string]any{
+		"accountId": "A1",
+		"ids":       nil,
+	})
+
+	// Execute the call
+	resp, err := client.Call(ctx, req)
+	require.NoError(t, err)
+
+	// Verify Authorization header was sent
+	assert.Equal(t, "Bearer test-token-abc", receivedAuth)
+
+	// Verify request structure
+	assert.Equal(t, []any{CapCore, CapMail}, receivedRequest["using"])
+	methodCalls := receivedRequest["methodCalls"].([]any)
+	require.Len(t, methodCalls, 1)
+
+	// Verify response
+	assert.Equal(t, "state123", resp.SessionState)
+	require.Len(t, resp.MethodResponses, 1)
+	assert.Equal(t, "Mailbox/get", resp.MethodResponses[0].Name)
+	assert.Equal(t, "0", resp.MethodResponses[0].CallID)
+}
+
+func TestClient_Call_HTTPError(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error": "server error"}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"capabilities": {},
+			"accounts": {},
+			"primaryAccounts": {},
+			"username": "test",
+			"apiUrl": "` + apiServer.URL + `",
+			"downloadUrl": "",
+			"uploadUrl": "",
+			"eventSourceUrl": "",
+			"state": ""
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "token")
+	ctx := context.Background()
+
+	req := NewRequest()
+	req.Invoke("Test/method", map[string]any{})
+
+	resp, err := client.Call(ctx, req)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Contains(t, err.Error(), "500")
+}
+
+func TestClient_Call_SessionError(t *testing.T) {
+	// Session server returns error
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "bad-token")
+	ctx := context.Background()
+
+	req := NewRequest()
+	req.Invoke("Test/method", map[string]any{})
+
+	resp, err := client.Call(ctx, req)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Contains(t, err.Error(), "getting session")
+}
+
+func TestClient_Call_JMAPError(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["error", {"type": "unknownMethod", "description": "Method not found"}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"capabilities": {},
+			"accounts": {},
+			"primaryAccounts": {},
+			"username": "test",
+			"apiUrl": "` + apiServer.URL + `",
+			"downloadUrl": "",
+			"uploadUrl": "",
+			"eventSourceUrl": "",
+			"state": ""
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "token")
+	ctx := context.Background()
+
+	req := NewRequest()
+	req.Invoke("Unknown/method", map[string]any{})
+
+	// Call succeeds (HTTP 200), but response contains JMAP error
+	resp, err := client.Call(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	result, err := resp.GetResult("0")
+	require.NoError(t, err)
+	assert.True(t, result.IsError())
+
+	jmapErr := result.Error()
+	assert.Equal(t, "unknownMethod", jmapErr.Type)
+}

@@ -1,9 +1,11 @@
 package jmap
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 )
@@ -73,4 +75,45 @@ func (c *Client) Session(ctx context.Context) (*Session, error) {
 	c.mu.RUnlock()
 
 	return c.Authenticate(ctx)
+}
+
+// Call executes a JMAP API request and returns the response.
+// It uses the session's API URL for the request endpoint.
+func (c *Client) Call(ctx context.Context, request *Request) (*Response, error) {
+	session, err := c.Session(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting session: %w", err)
+	}
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, session.APIURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+c.accessToken)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("executing request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var response Response
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &response, nil
 }
