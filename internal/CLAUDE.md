@@ -9,6 +9,7 @@ Private packages for fastmail-cli implementation.
 | `config/` | Configuration loading via viper |
 | `auth/` | Authentication and credential storage |
 | `jmap/` | JMAP protocol client implementation |
+| `dav/` | CardDAV/CalDAV client implementation |
 | `output/` | Output formatting (JSON, table, etc.) |
 | `mocks/` | Generated mock implementations |
 
