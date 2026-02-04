@@ -6,28 +6,32 @@ import (
 	"encoding/json"
 )
 
-// JSON-RPC 2.0 protocol version.
+// JSONRPCVersion is the JSON-RPC 2.0 protocol version.
 const JSONRPCVersion = "2.0"
 
 // MCP method names.
 const (
-	// Discovery methods
+	// MethodInitialize is the discovery method for initialization.
 	MethodInitialize = "initialize"
 
-	// Tool methods
+	// MethodToolsList lists available tools.
 	MethodToolsList = "tools/list"
+	// MethodToolsCall executes a tool.
 	MethodToolsCall = "tools/call"
 
-	// Resource methods
-	MethodResourcesList     = "resources/list"
-	MethodResourcesRead     = "resources/read"
+	// MethodResourcesList lists available resources.
+	MethodResourcesList = "resources/list"
+	// MethodResourcesRead reads a resource.
+	MethodResourcesRead = "resources/read"
+	// MethodResourcesTemplates lists resource templates.
 	MethodResourcesTemplates = "resources/templates"
 
-	// Prompt methods
+	// MethodPromptsList lists available prompts.
 	MethodPromptsList = "prompts/list"
-	MethodPromptsGet  = "prompts/get"
+	// MethodPromptsGet gets a prompt.
+	MethodPromptsGet = "prompts/get"
 
-	// Notification methods
+	// MethodNotificationsInitialized is sent when initialization is complete.
 	MethodNotificationsInitialized = "notifications/initialized"
 )
 
