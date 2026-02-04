@@ -33,7 +33,11 @@ go.work.sum
 
 # Build output
 bin/
+dist/
 .task/
+
+# Lefthook local overrides
+lefthook.local.yaml
 
 # Gas Town (added by gt)
 .runtime/

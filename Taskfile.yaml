@@ -71,6 +71,17 @@ tasks:
       - task: test
       - task: build
 
+  # Git hooks
+  hooks:install:
+    desc: Install git hooks via lefthook
+    cmds:
+      - lefthook install
+
+  hooks:uninstall:
+    desc: Uninstall git hooks via lefthook
+    cmds:
+      - lefthook uninstall
+
   # Documentation tasks
   docs:build:
     desc: Build documentation site
@@ -88,6 +99,16 @@ tasks:
     dir: docs/site
     cmds:
       - zensical serve
+
+  release:check:
+    desc: Validate GoReleaser config
+    cmds:
+      - goreleaser check
+
+  release:snapshot:
+    desc: Build a local snapshot release (no publish)
+    cmds:
+      - goreleaser release --snapshot --clean
 
   docs:clean:
     desc: Clean documentation build artifacts
