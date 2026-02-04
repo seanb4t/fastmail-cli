@@ -12,8 +12,15 @@ site_dir: _site
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - CLI Reference:
+      - Overview: cli/index.md
+      - auth: cli/auth.md
+      - mail: cli/mail.md
+      - contacts: cli/contacts.md
+      - masked-email: cli/masked-email.md
+      - export: cli/export.md
+      - mcp: cli/mcp.md
   - Reference:
-      - CLI Commands: reference/cli.md
       - MCP Integration: reference/mcp.md
 
 theme:
