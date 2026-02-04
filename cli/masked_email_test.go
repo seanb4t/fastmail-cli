@@ -1,10 +1,12 @@
-package fastmail
+package cli
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,17 +42,39 @@ func maskedEmailSessionResponse(apiURL string) string {
 	}`
 }
 
-func TestMaskedEmailService_List(t *testing.T) {
+func setupMaskedEmailTestEnv(t *testing.T, sessionURL string) (string, func()) {
+	t.Helper()
+
+	// Create temp directory for config
+	tempDir, err := os.MkdirTemp("", "fastmail-cli-test-*")
+	require.NoError(t, err)
+
+	configPath := filepath.Join(tempDir, "config.yaml")
+	configContent := `endpoint: "` + sessionURL + `"`
+	err = os.WriteFile(configPath, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	// Set token via env var
+	originalEnv := os.Getenv("FASTMAIL_TOKEN")
+	os.Setenv("FASTMAIL_TOKEN", "test-token")
+
+	cleanup := func() {
+		os.RemoveAll(tempDir)
+		if originalEnv != "" {
+			os.Setenv("FASTMAIL_TOKEN", originalEnv)
+		} else {
+			os.Unsetenv("FASTMAIL_TOKEN")
+		}
+	}
+
+	return configPath, cleanup
+}
+
+func TestMaskedEmailListCommand(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		err := json.NewDecoder(r.Body).Decode(&req)
 		require.NoError(t, err)
-
-		methodCalls := req["methodCalls"].([]any)
-		firstCall := methodCalls[0].([]any)
-		methodName := firstCall[0].(string)
-
-		assert.Equal(t, "MaskedEmail/get", methodName)
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -66,15 +90,14 @@ func TestMaskedEmailService_List(t *testing.T) {
 							"state": "enabled",
 							"forDomain": "example.com",
 							"description": "Shopping site",
-							"createdAt": "2024-01-15T10:30:00Z",
-							"lastMessageAt": "2024-01-20T15:00:00Z"
+							"createdAt": "2024-01-15T10:30:00Z"
 						},
 						{
 							"id": "me-2",
 							"email": "xyz789@fastmail.com",
 							"state": "disabled",
 							"forDomain": "newsletter.com",
-							"description": "Newsletter signup",
+							"description": "Newsletter",
 							"createdAt": "2024-01-10T08:00:00Z"
 						}
 					],
@@ -91,24 +114,76 @@ func TestMaskedEmailService_List(t *testing.T) {
 	}))
 	defer sessionServer.Close()
 
-	client := NewClient(sessionServer.URL, "test-token")
-	ctx := context.Background()
+	configPath, cleanup := setupMaskedEmailTestEnv(t, sessionServer.URL)
+	defer cleanup()
 
-	emails, err := client.MaskedEmail().List(ctx)
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", configPath, "masked-email", "list"})
+
+	err := cmd.Execute()
 	require.NoError(t, err)
-	require.Len(t, emails, 2)
 
-	assert.Equal(t, "me-1", emails[0].ID)
-	assert.Equal(t, "abc123@fastmail.com", emails[0].Email)
-	assert.Equal(t, MaskedEmailStateEnabled, emails[0].State)
-	assert.Equal(t, "example.com", emails[0].ForDomain)
-	assert.Equal(t, "Shopping site", emails[0].Description)
-
-	assert.Equal(t, "me-2", emails[1].ID)
-	assert.Equal(t, MaskedEmailStateDisabled, emails[1].State)
+	output := out.String()
+	assert.Contains(t, output, "abc123@fastmail.com")
+	assert.Contains(t, output, "xyz789@fastmail.com")
+	assert.Contains(t, output, "enabled")
+	assert.Contains(t, output, "disabled")
 }
 
-func TestMaskedEmailService_Create(t *testing.T) {
+func TestMaskedEmailListCommand_JSON(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["MaskedEmail/get", {
+					"accountId": "acc1",
+					"state": "me1",
+					"list": [
+						{
+							"id": "me-1",
+							"email": "test@fastmail.com",
+							"state": "enabled",
+							"forDomain": "example.com"
+						}
+					],
+					"notFound": []
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(maskedEmailSessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	configPath, cleanup := setupMaskedEmailTestEnv(t, sessionServer.URL)
+	defer cleanup()
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", configPath, "--json", "masked-email", "list"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	// Verify it's valid JSON
+	var result []map[string]any
+	err = json.Unmarshal(out.Bytes(), &result)
+	require.NoError(t, err)
+	assert.Len(t, result, 1)
+	assert.Equal(t, "test@fastmail.com", result[0]["email"])
+}
+
+func TestMaskedEmailCreateCommand(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		err := json.NewDecoder(r.Body).Decode(&req)
@@ -116,16 +191,12 @@ func TestMaskedEmailService_Create(t *testing.T) {
 
 		methodCalls := req["methodCalls"].([]any)
 		firstCall := methodCalls[0].([]any)
-		methodName := firstCall[0].(string)
 		args := firstCall[1].(map[string]any)
 
-		assert.Equal(t, "MaskedEmail/set", methodName)
-
-		// Verify create payload
+		// Verify create payload has the domain
 		create := args["create"].(map[string]any)
 		newME := create["new"].(map[string]any)
 		assert.Equal(t, "shop.example.com", newME["forDomain"])
-		assert.Equal(t, "enabled", newME["state"])
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -137,11 +208,10 @@ func TestMaskedEmailService_Create(t *testing.T) {
 					"newState": "me2",
 					"created": {
 						"new": {
-							"id": "me-new-123",
+							"id": "me-new",
 							"email": "newaddr@fastmail.com",
 							"state": "enabled",
-							"forDomain": "shop.example.com",
-							"createdAt": "2024-01-25T12:00:00Z"
+							"forDomain": "shop.example.com"
 						}
 					}
 				}, "0"]
@@ -156,24 +226,23 @@ func TestMaskedEmailService_Create(t *testing.T) {
 	}))
 	defer sessionServer.Close()
 
-	client := NewClient(sessionServer.URL, "test-token")
-	ctx := context.Background()
+	configPath, cleanup := setupMaskedEmailTestEnv(t, sessionServer.URL)
+	defer cleanup()
 
-	opts := CreateMaskedEmailOptions{
-		ForDomain:   "shop.example.com",
-		Description: "Shopping site",
-	}
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", configPath, "masked-email", "create", "--for-domain", "shop.example.com"})
 
-	maskedEmail, err := client.MaskedEmail().Create(ctx, opts)
+	err := cmd.Execute()
 	require.NoError(t, err)
-	require.NotNil(t, maskedEmail)
 
-	assert.Equal(t, "me-new-123", maskedEmail.ID)
-	assert.Equal(t, "newaddr@fastmail.com", maskedEmail.Email)
-	assert.Equal(t, MaskedEmailStateEnabled, maskedEmail.State)
+	output := out.String()
+	assert.Contains(t, output, "newaddr@fastmail.com")
 }
 
-func TestMaskedEmailService_Enable(t *testing.T) {
+func TestMaskedEmailEnableCommand(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		err := json.NewDecoder(r.Body).Decode(&req)
@@ -181,14 +250,11 @@ func TestMaskedEmailService_Enable(t *testing.T) {
 
 		methodCalls := req["methodCalls"].([]any)
 		firstCall := methodCalls[0].([]any)
-		methodName := firstCall[0].(string)
 		args := firstCall[1].(map[string]any)
-
-		assert.Equal(t, "MaskedEmail/set", methodName)
 
 		// Verify update payload
 		update := args["update"].(map[string]any)
-		meUpdate := update["me-disabled-1"].(map[string]any)
+		meUpdate := update["me-123"].(map[string]any)
 		assert.Equal(t, "enabled", meUpdate["state"])
 
 		w.Header().Set("Content-Type", "application/json")
@@ -199,12 +265,7 @@ func TestMaskedEmailService_Enable(t *testing.T) {
 					"accountId": "acc1",
 					"oldState": "me1",
 					"newState": "me2",
-					"updated": {
-						"me-disabled-1": {
-							"id": "me-disabled-1",
-							"state": "enabled"
-						}
-					}
+					"updated": {"me-123": null}
 				}, "0"]
 			]
 		}`))
@@ -217,14 +278,23 @@ func TestMaskedEmailService_Enable(t *testing.T) {
 	}))
 	defer sessionServer.Close()
 
-	client := NewClient(sessionServer.URL, "test-token")
-	ctx := context.Background()
+	configPath, cleanup := setupMaskedEmailTestEnv(t, sessionServer.URL)
+	defer cleanup()
 
-	err := client.MaskedEmail().Enable(ctx, "me-disabled-1")
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", configPath, "masked-email", "enable", "me-123"})
+
+	err := cmd.Execute()
 	require.NoError(t, err)
+
+	output := out.String()
+	assert.Contains(t, output, "Enabled")
 }
 
-func TestMaskedEmailService_Disable(t *testing.T) {
+func TestMaskedEmailDisableCommand(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		err := json.NewDecoder(r.Body).Decode(&req)
@@ -232,14 +302,11 @@ func TestMaskedEmailService_Disable(t *testing.T) {
 
 		methodCalls := req["methodCalls"].([]any)
 		firstCall := methodCalls[0].([]any)
-		methodName := firstCall[0].(string)
 		args := firstCall[1].(map[string]any)
-
-		assert.Equal(t, "MaskedEmail/set", methodName)
 
 		// Verify update payload
 		update := args["update"].(map[string]any)
-		meUpdate := update["me-enabled-1"].(map[string]any)
+		meUpdate := update["me-456"].(map[string]any)
 		assert.Equal(t, "disabled", meUpdate["state"])
 
 		w.Header().Set("Content-Type", "application/json")
@@ -250,12 +317,7 @@ func TestMaskedEmailService_Disable(t *testing.T) {
 					"accountId": "acc1",
 					"oldState": "me1",
 					"newState": "me2",
-					"updated": {
-						"me-enabled-1": {
-							"id": "me-enabled-1",
-							"state": "disabled"
-						}
-					}
+					"updated": {"me-456": null}
 				}, "0"]
 			]
 		}`))
@@ -268,14 +330,23 @@ func TestMaskedEmailService_Disable(t *testing.T) {
 	}))
 	defer sessionServer.Close()
 
-	client := NewClient(sessionServer.URL, "test-token")
-	ctx := context.Background()
+	configPath, cleanup := setupMaskedEmailTestEnv(t, sessionServer.URL)
+	defer cleanup()
 
-	err := client.MaskedEmail().Disable(ctx, "me-enabled-1")
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", configPath, "masked-email", "disable", "me-456"})
+
+	err := cmd.Execute()
 	require.NoError(t, err)
+
+	output := out.String()
+	assert.Contains(t, output, "Disabled")
 }
 
-func TestMaskedEmailService_Delete(t *testing.T) {
+func TestMaskedEmailDeleteCommand(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		err := json.NewDecoder(r.Body).Decode(&req)
@@ -283,10 +354,7 @@ func TestMaskedEmailService_Delete(t *testing.T) {
 
 		methodCalls := req["methodCalls"].([]any)
 		firstCall := methodCalls[0].([]any)
-		methodName := firstCall[0].(string)
 		args := firstCall[1].(map[string]any)
-
-		assert.Equal(t, "MaskedEmail/set", methodName)
 
 		// Verify destroy payload
 		destroy := args["destroy"].([]any)
@@ -313,45 +381,51 @@ func TestMaskedEmailService_Delete(t *testing.T) {
 	}))
 	defer sessionServer.Close()
 
-	client := NewClient(sessionServer.URL, "test-token")
-	ctx := context.Background()
+	configPath, cleanup := setupMaskedEmailTestEnv(t, sessionServer.URL)
+	defer cleanup()
 
-	err := client.MaskedEmail().Delete(ctx, "me-to-delete")
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", configPath, "masked-email", "delete", "me-to-delete"})
+
+	err := cmd.Execute()
 	require.NoError(t, err)
+
+	output := out.String()
+	assert.Contains(t, output, "Deleted")
 }
 
-func TestMaskedEmailService_Delete_NotFound(t *testing.T) {
-	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"sessionState": "s1",
-			"methodResponses": [
-				["MaskedEmail/set", {
-					"accountId": "acc1",
-					"oldState": "me1",
-					"newState": "me1",
-					"notDestroyed": {
-						"nonexistent": {
-							"type": "notFound",
-							"description": "Masked email not found"
-						}
-					}
-				}, "0"]
-			]
-		}`))
-	}))
-	defer apiServer.Close()
+func TestMaskedEmailEnableCommand_RequiresID(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"masked-email", "enable"})
 
-	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(maskedEmailSessionResponse(apiServer.URL)))
-	}))
-	defer sessionServer.Close()
-
-	client := NewClient(sessionServer.URL, "test-token")
-	ctx := context.Background()
-
-	err := client.MaskedEmail().Delete(ctx, "nonexistent")
+	err := cmd.Execute()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "notFound")
+}
+
+func TestMaskedEmailDisableCommand_RequiresID(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"masked-email", "disable"})
+
+	err := cmd.Execute()
+	assert.Error(t, err)
+}
+
+func TestMaskedEmailDeleteCommand_RequiresID(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"masked-email", "delete"})
+
+	err := cmd.Execute()
+	assert.Error(t, err)
 }
