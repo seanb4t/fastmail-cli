@@ -29,14 +29,27 @@ func TestAuthStatus_NoToken(t *testing.T) {
 	cmd.SetArgs([]string{"--config", configPath, "auth", "status"})
 
 	err := cmd.Execute()
-	if err != nil {
-		t.Fatalf("auth status should not error when no token: %v", err)
+	// Now expects an error for no token
+	if err == nil {
+		t.Fatal("auth status should error when no token")
 	}
 
 	output := buf.String()
 	if !strings.Contains(output, "Not logged in") {
 		t.Errorf("expected 'Not logged in' in output, got: %q", output)
 	}
+}
+
+func TestAuthStatus_ValidToken(t *testing.T) {
+	t.Skip("requires JMAP mock infrastructure - implement in task 5")
+}
+
+func TestAuthStatus_InvalidToken(t *testing.T) {
+	t.Skip("requires JMAP mock infrastructure - implement in task 5")
+}
+
+func TestAuthStatus_NetworkError(t *testing.T) {
+	t.Skip("requires JMAP mock infrastructure - implement in task 5")
 }
 
 func TestAuthStatus_WithToken(t *testing.T) {
