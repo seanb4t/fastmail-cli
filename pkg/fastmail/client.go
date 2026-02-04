@@ -52,6 +52,14 @@ func (c *Client) MaskedEmail() *MaskedEmailService {
 	}
 }
 
+// Contacts returns the contacts service for contact operations.
+// Note: ContactsService requires a CardDAV client to be configured separately.
+func (c *Client) Contacts() *ContactsService {
+	return &ContactsService{
+		client: c,
+	}
+}
+
 // accountID returns the current account ID, fetching session if needed.
 func (c *Client) getAccountID(ctx context.Context) (string, error) {
 	if c.accountID != "" {
