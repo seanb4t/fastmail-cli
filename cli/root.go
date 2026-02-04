@@ -85,3 +85,8 @@ func (r *RootCommand) SetOut(w interface{ Write([]byte) (int, error) }) {
 func (r *RootCommand) SetArgs(args []string) {
 	r.cmd.SetArgs(args)
 }
+
+// SetErr sets the error writer for the command.
+func (r *RootCommand) SetErr(w interface{ Write([]byte) (int, error) }) {
+	r.cmd.SetErr(w)
+}

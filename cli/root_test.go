@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -103,6 +104,10 @@ func TestRootCommand_GlobalFlags(t *testing.T) {
 }
 
 func TestAuthSubcommands(t *testing.T) {
+	// Use temp config to avoid writing to default config path
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
 	tests := []struct {
 		name    string
 		args    []string
@@ -110,10 +115,10 @@ func TestAuthSubcommands(t *testing.T) {
 	}{
 		{"auth help", []string{"auth", "--help"}, false},
 		// login requires --token flag or interactive terminal
-		{"auth login requires token", []string{"auth", "login"}, true},
+		{"auth login requires token", []string{"--config", configPath, "auth", "login"}, true},
 		// logout and status now work (implemented in auth.go)
-		{"auth logout works", []string{"auth", "logout"}, false},
-		{"auth status works", []string{"auth", "status"}, false},
+		{"auth logout works", []string{"--config", configPath, "auth", "logout"}, false},
+		{"auth status works", []string{"--config", configPath, "auth", "status"}, false},
 	}
 
 	for _, tt := range tests {
