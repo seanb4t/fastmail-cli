@@ -68,38 +68,76 @@ fastmail-cli auth status
 
 ## auth status
 
-Show whether you are currently logged in.
+Validate your authentication against the FastMail API.
+
+This command checks not just whether a token is stored, but whether it's actually valid by making a request to the FastMail JMAP API.
 
 ```bash
 fastmail-cli auth status
 ```
 
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Authenticated successfully |
+| 1 | No token stored |
+| 2 | Token expired or revoked |
+| 3 | Cannot reach FastMail API |
+
 ### Output
 
 Text output:
 ```
-Logged in
+Authenticated as user@fastmail.com
 ```
 or
 ```
 Not logged in
 ```
+or
+```
+Token expired or revoked
+```
+or
+```
+Cannot reach FastMail API: <error details>
+```
 
 JSON output (`--json`):
 ```json
 {
-  "logged_in": true
+  "authenticated": true,
+  "username": "user@fastmail.com"
+}
+```
+
+When not authenticated:
+```json
+{
+  "authenticated": false,
+  "reason": "no_token"
 }
 ```
 
 ### Examples
 
 ```bash
-# Check status
+# Check authentication status
 fastmail-cli auth status
 
-# Check status as JSON
+# Check status in scripts
+if fastmail-cli auth status; then
+  echo "Ready to use"
+else
+  echo "Please run: fastmail-cli auth login"
+fi
+
+# JSON output for automation
 fastmail-cli auth status --json
+
+# Combine with other tools
+fastmail-cli auth status --json | jq -r '.username'
 ```
 
 ## See Also
