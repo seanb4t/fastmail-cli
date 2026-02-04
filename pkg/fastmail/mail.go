@@ -79,7 +79,7 @@ func (s *MailService) List(ctx context.Context, folder string, limit uint64) ([]
 	return convertEmails(getResp.List), nil
 }
 
-// Get returns a single email by ID.
+// Get returns a single email by ID with full content including body text.
 func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
@@ -88,10 +88,14 @@ func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 
 	getBuilder := jmap.NewEmailGet(accountID).
 		IDs(id).
-		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds",
+			"from", "to", "cc", "bodyValues", "textBody")
+
+	args := getBuilder.Build()
+	args["fetchTextBodyValues"] = true
 
 	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
-	callID := req.Invoke("Email/get", getBuilder.Build())
+	callID := req.Invoke("Email/get", args)
 
 	resp, err := s.client.jmap.Call(ctx, req)
 	if err != nil {
@@ -412,11 +416,38 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 			}
 		}
 
+		// Convert address fields
+		var from EmailAddress
+		if len(je.From) > 0 {
+			from = EmailAddress{Name: je.From[0].Name, Email: je.From[0].Email}
+		}
+		to := make([]EmailAddress, len(je.To))
+		for j, addr := range je.To {
+			to[j] = EmailAddress{Name: addr.Name, Email: addr.Email}
+		}
+		cc := make([]EmailAddress, len(je.Cc))
+		for j, addr := range je.Cc {
+			cc[j] = EmailAddress{Name: addr.Name, Email: addr.Email}
+		}
+
+		// Extract body text from bodyValues
+		var body string
+		if len(je.TextBody) > 0 && len(je.BodyValues) > 0 {
+			partID := je.TextBody[0].PartID
+			if bv, ok := je.BodyValues[partID]; ok {
+				body = bv.Value
+			}
+		}
+
 		emails[i] = Email{
 			ID:         je.ID,
 			ThreadID:   je.ThreadID,
 			Subject:    je.Subject,
+			From:       from,
+			To:         to,
+			Cc:         cc,
 			Preview:    je.Preview,
+			Body:       body,
 			ReceivedAt: receivedAt,
 			Size:       je.Size,
 			Keywords:   keywords,

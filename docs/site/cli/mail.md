@@ -5,6 +5,7 @@ Commands for reading, sending, and managing email.
 ## Commands
 
 - [mail list](#mail-list) - List emails
+- [mail read](#mail-read) - Read an email
 - [mail send](#mail-send) - Send an email
 - [mail reply](#mail-reply) - Reply to an email
 
@@ -50,6 +51,50 @@ fastmail-cli mail list --folder Sent --json
 
 # List only 5 emails
 fastmail-cli mail list -n 5
+```
+
+---
+
+## mail read
+
+Display the full content of an email by its ID.
+
+```bash
+fastmail-cli mail read EMAIL_ID
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `EMAIL_ID` | ID of the email to read |
+
+### Output
+
+Text output shows headers and body:
+```
+From:    Alice Smith <alice@example.com>
+To:      bob@example.com
+Date:    2026-02-04 10:30
+Subject: Meeting tomorrow
+
+Hi Bob, can we meet at 2pm tomorrow?
+```
+
+JSON output includes the full Email struct.
+
+### Examples
+
+```bash
+# Read an email by ID
+fastmail-cli mail read M12345
+
+# Read as JSON
+fastmail-cli mail read M12345 --json
+
+# List then read the first email
+EMAIL_ID=$(fastmail-cli mail list -n 1 --json | jq -r '.[0].id')
+fastmail-cli mail read "$EMAIL_ID"
 ```
 
 ---

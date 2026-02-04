@@ -21,8 +21,41 @@ func newMailCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newMailListCommand())
+	cmd.AddCommand(newMailReadCommand())
 	cmd.AddCommand(newMailSendCommand())
 	cmd.AddCommand(newMailReplyCommand())
+
+	return cmd
+}
+
+// newMailReadCommand creates the mail read command.
+func newMailReadCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "read EMAIL_ID",
+		Short: "Read an email",
+		Long:  "Display the full content of an email by its ID.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			email, err := client.Mail().Get(ctx, emailID)
+			if err != nil {
+				return fmt.Errorf("reading email: %w", err)
+			}
+
+			return outputEmailDetail(cmd, email)
+		},
+	}
 
 	return cmd
 }
@@ -238,6 +271,41 @@ func outputEmails(cmd *cobra.Command, emails []fastmail.Email) error {
 		}
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s%s\n", e.ID, e.Subject, status)
 	}
+
+	return nil
+}
+
+// outputEmailDetail writes a single email with full headers and body.
+func outputEmailDetail(cmd *cobra.Command, email *fastmail.Email) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(email)
+	}
+
+	w := cmd.OutOrStdout()
+	_, _ = fmt.Fprintf(w, "From:    %s\n", email.From)
+	if len(email.To) > 0 {
+		toStrs := make([]string, len(email.To))
+		for i, addr := range email.To {
+			toStrs[i] = addr.String()
+		}
+		_, _ = fmt.Fprintf(w, "To:      %s\n", strings.Join(toStrs, ", "))
+	}
+	if len(email.Cc) > 0 {
+		ccStrs := make([]string, len(email.Cc))
+		for i, addr := range email.Cc {
+			ccStrs[i] = addr.String()
+		}
+		_, _ = fmt.Fprintf(w, "Cc:      %s\n", strings.Join(ccStrs, ", "))
+	}
+	_, _ = fmt.Fprintf(w, "Date:    %s\n", email.ReceivedAt.Format("2006-01-02 15:04"))
+	_, _ = fmt.Fprintf(w, "Subject: %s\n", email.Subject)
+	_, _ = fmt.Fprintf(w, "\n%s\n", email.Body)
 
 	return nil
 }
