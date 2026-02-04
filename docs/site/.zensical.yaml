@@ -15,6 +15,13 @@ nav:
   - Reference:
       - CLI Commands: reference/cli.md
       - MCP Integration: reference/mcp.md
+  - Go Library:
+      - Overview: api/index.md
+      - Client: api/fastmail.md
+      - Mail: api/mail.md
+      - Contacts: api/contacts.md
+      - Calendar: api/calendar.md
+      - Masked Email: api/masked-email.md
 
 theme:
   features:
