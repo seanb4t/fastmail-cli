@@ -52,4 +52,4 @@ The MCP server exposes FastMail resources and tools to compatible AI clients.
 
 - [Getting Started](getting-started.md) - Installation and configuration guide
 - [CLI Reference](reference/cli.md) - Complete command documentation
-- [MCP Integration](reference/mcp.md) - Using FastMail with AI assistants
+- [MCP Integration](mcp/index.md) - Using FastMail with AI assistants
