@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ExportJSONL writes emails in JSON Lines format to the given writer.
@@ -87,6 +88,58 @@ func maildirFlags(email Email) string {
 
 	sort.Strings(flags)
 	return strings.Join(flags, "")
+}
+
+// ExportMbox writes emails in standard Mboxo format to the given writer.
+// Each email is preceded by a "From " envelope line and any lines in the
+// message body starting with "From " are quoted with ">".
+// This format is streaming-friendly and compatible with standard Unix mail tools.
+func ExportMbox(w io.Writer, emails []Email) error {
+	for _, email := range emails {
+		// Write "From " envelope line (not a header, but mbox separator)
+		// Format: "From sender@domain Day Mon DD HH:MM:SS YYYY"
+		sender := email.From.Email
+		if sender == "" {
+			sender = "MAILER-DAEMON"
+		}
+		timestamp := email.ReceivedAt.Format(time.ANSIC)
+		if _, err := fmt.Fprintf(w, "From %s %s\n", sender, timestamp); err != nil {
+			return err
+		}
+
+		// Write RFC 5322 content with From-quoting for mbox safety
+		content := formatRFC5322(email)
+		quoted := mboxQuoteFrom(content)
+		if _, err := io.WriteString(w, quoted); err != nil {
+			return err
+		}
+
+		// Ensure message ends with blank line (mbox message separator)
+		if !strings.HasSuffix(quoted, "\n") {
+			if _, err := io.WriteString(w, "\n"); err != nil {
+				return err
+			}
+		}
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// mboxQuoteFrom quotes lines starting with "From " by prefixing with ">".
+// This is the Mboxo quoting convention to prevent false message boundaries.
+func mboxQuoteFrom(content string) string {
+	// Use LF line endings for mbox (Unix convention)
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "From ") {
+			lines[i] = ">" + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // formatRFC5322 converts an Email to RFC 5322 message format.
