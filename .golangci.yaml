@@ -1,12 +1,13 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
 
 linters:
   enable:
-    # Default linters
+    # Default linters (enabled by default, listed for clarity)
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
@@ -21,8 +22,6 @@ linters:
     - gocritic
     - gocyclo
     - godot
-    - gofmt
-    - goimports
     - gosec
     - misspell
     - noctx
@@ -31,6 +30,11 @@ linters:
     - unconvert
     - unparam
     - whitespace
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 linters-settings:
   errcheck:
@@ -52,16 +56,6 @@ linters-settings:
       - diagnostic
       - style
       - performance
-
-  gofmt:
-    simplify: true
-
-  goimports:
-    local-prefixes: github.com/seanb4t/fastmail-cli
-
-  gosec:
-    excludes:
-      - G104 # Audit errors not checked
 
   misspell:
     locale: US
@@ -88,8 +82,12 @@ linters-settings:
       - name: indent-error-flow
       - name: errorf
 
+formatters-settings:
+  goimports:
+    local-prefixes:
+      - github.com/seanb4t/fastmail-cli
+
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
 

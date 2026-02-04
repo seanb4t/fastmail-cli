@@ -31,6 +31,10 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# Build output
+bin/
+.task/
+
 # Gas Town (added by gt)
 .runtime/
 .claude/
