@@ -180,15 +180,6 @@ func TestNewClient(t *testing.T) {
 	assert.NotNil(t, client.httpClient)
 }
 
-// mockRoundTripper implements http.RoundTripper for testing.
-type mockRoundTripper struct {
-	fn func(req *http.Request) (*http.Response, error)
-}
-
-func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return m.fn(req)
-}
-
 func TestClient_WithHTTPClient(t *testing.T) {
 	called := false
 	mockTransport := &mockRoundTripper{
@@ -385,34 +376,4 @@ func TestClient_Call_JMAPError(t *testing.T) {
 
 	jmapErr := result.Error()
 	assert.Equal(t, "unknownMethod", jmapErr.Type)
-}
-
-func TestClient_WithHTTPClient(t *testing.T) {
-	called := false
-	mockTransport := &mockRoundTripper{
-		fn: func(req *http.Request) (*http.Response, error) {
-			called = true
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body: io.NopCloser(strings.NewReader(`{
-					"capabilities": {},
-					"accounts": {},
-					"primaryAccounts": {},
-					"username": "test@example.com",
-					"apiUrl": "https://api.fastmail.com/jmap/api/",
-					"downloadUrl": "",
-					"uploadUrl": "",
-					"eventSourceUrl": "",
-					"state": ""
-				}`)),
-			}, nil
-		},
-	}
-
-	client := NewClient("https://api.fastmail.com/jmap/session", "test-token",
-		WithHTTPClient(&http.Client{Transport: mockTransport}))
-
-	_, err := client.Authenticate(context.Background())
-	require.NoError(t, err)
-	assert.True(t, called, "custom HTTP client should be used")
 }
