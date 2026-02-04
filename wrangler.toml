@@ -1,0 +1,8 @@
+# Cloudflare Pages Configuration
+# https://developers.cloudflare.com/pages/functions/wrangler-configuration/
+
+name = "fastmail-cli-docs"
+pages_build_output_dir = "docs/site/_site"
+
+# Compatibility settings
+compatibility_date = "2026-02-04"

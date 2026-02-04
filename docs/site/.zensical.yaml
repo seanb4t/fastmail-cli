@@ -1,0 +1,51 @@
+# Zensical Documentation Site Configuration
+# https://zensical.org/
+
+site_name: FastMail CLI
+site_url: https://fastmail-cli.pages.dev
+site_description: A command-line interface for FastMail
+site_author: FastMail CLI Contributors
+
+docs_dir: .
+site_dir: _site
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Reference:
+      - CLI Commands: reference/cli.md
+      - MCP Integration: reference/mcp.md
+
+theme:
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: lucide/sun
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: orange
+      toggle:
+        icon: lucide/moon
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true

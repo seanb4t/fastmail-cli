@@ -70,3 +70,26 @@ tasks:
       - task: lint
       - task: test
       - task: build
+
+  # Documentation tasks
+  docs:build:
+    desc: Build documentation site
+    dir: docs/site
+    cmds:
+      - zensical build
+    sources:
+      - '**/*.md'
+      - '.zensical.yaml'
+    generates:
+      - '_site/**/*'
+
+  docs:serve:
+    desc: Serve documentation locally
+    dir: docs/site
+    cmds:
+      - zensical serve
+
+  docs:clean:
+    desc: Clean documentation build artifacts
+    cmds:
+      - rm -rf docs/site/_site
