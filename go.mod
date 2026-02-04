@@ -3,8 +3,6 @@ module github.com/seanb4t/fastmail-cli
 go 1.25.6
 
 require (
-	github.com/emersion/go-vcard v0.0.0-20241024213814-c9703dde27ff
-	github.com/emersion/go-webdav v0.7.0
 	github.com/samber/oops v1.21.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
@@ -18,6 +16,7 @@ require (
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608 // indirect
+	github.com/emersion/go-webdav v0.7.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect

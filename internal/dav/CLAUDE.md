@@ -1,45 +1,32 @@
 # internal/dav
 
-WebDAV/CardDAV client implementation for contact management.
+CalDAV protocol client implementation.
 
 ## Purpose
 
-Provides low-level CardDAV protocol operations for contact synchronization with Fastmail.
+Handle CalDAV/WebDAV communication with Fastmail calendars:
+- Calendar collection discovery
+- Event CRUD operations
+- iCalendar parsing and serialization
 
 ## Key Types
 
 | Type | Description |
 |------|-------------|
-| `CardDAVClient` | HTTP client for CardDAV operations |
-| `Contact` | vCard contact data with all fields |
-| `Address` | Physical address component |
-| `AddressBook` | Address book collection |
+| `Client` | CalDAV client interface |
+| `Calendar` | Calendar collection type |
+| `Event` | Calendar event with iCalendar properties |
 
-## CardDAV Operations
-
-| Method | Description |
-|--------|-------------|
-| `ListAddressBooks()` | Discover address books via PROPFIND |
-| `ListContacts()` | Query all contacts in address book via REPORT |
-| `GetContact()` | Retrieve single contact vCard via GET |
-| `CreateContact()` | Create new contact via PUT with If-None-Match |
-| `UpdateContact()` | Update contact via PUT with ETag precondition |
-| `DeleteContact()` | Remove contact via DELETE |
-
-## vCard Handling
+## Functions
 
 | Function | Description |
 |----------|-------------|
-| `ParseVCard()` | Parse vCard 3.0 string to Contact |
-| `Contact.ToVCard()` | Serialize Contact to vCard 3.0 |
+| `ParseICalendarEvent` | Parse iCalendar data into Event |
+| `SerializeEventToICalendar` | Convert Event to iCalendar format |
 
-## Fastmail Specifics
+## Conventions
 
-- CardDAV endpoint: `https://carddav.fastmail.com/`
-- Address book path: `/dav/addressbooks/user/{username}/Default/`
-- Uses app password authentication via Basic Auth
-- vCard 3.0 format for contacts
-
-## Dependencies
-
-- `github.com/emersion/go-vcard` - vCard parsing/serialization
+- Use context for request cancellation
+- Return domain types, not protocol types
+- Handle iCalendar required properties (DTSTAMP, UID)
+- Support all-day and recurring events
