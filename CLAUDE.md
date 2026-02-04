@@ -1,66 +1,59 @@
 # fastmail-cli
 
-Go CLI for Fastmail access and surfacing to Agentic Systems.
+A command-line interface and Go library for interacting with Fastmail.
 
-## Quick Reference
+## Project Structure
+
+```
+fastmail-cli/
+├── cli/          # CLI commands (cobra-based)
+├── cmd/          # Binary entrypoints
+├── docs/         # Documentation (reference + Zensical site)
+├── internal/     # Private implementation packages
+│   ├── auth/     # Credential storage (keychain/file)
+│   ├── config/   # Configuration loading (viper)
+│   ├── dav/      # CardDAV/CalDAV clients
+│   ├── jmap/     # JMAP protocol client
+│   └── output/   # Output formatters
+├── mcp/          # MCP server for AI agents
+├── pkg/          # Public library (fastmail/)
+└── testdata/     # Test fixtures
+```
+
+## Key Commands
 
 | Command | Description |
 |---------|-------------|
-| `task build` | Build the binary to `./bin/fastmail-cli` |
-| `task test` | Run all tests with race detection |
-| `task lint` | Run golangci-lint |
-| `task mocks` | Generate mocks with mockery |
-| `task all` | Lint, test, and build |
+| `fastmail auth` | Configure API credentials |
+| `fastmail mail` | Email operations (list, read, send, archive) |
+| `fastmail contacts` | Contact management |
+| `fastmail masked-email` | Masked email management |
+| `fastmail export` | Data export operations |
+| `fastmail mcp` | Start MCP server for AI agents |
 
 ## Architecture
 
-```
-cmd/
-  fastmail-cli/     # CLI entrypoint
-internal/
-  client/           # Fastmail JMAP client
-  config/           # Configuration management
-  commands/         # CLI command implementations
-pkg/
-  jmap/             # JMAP protocol types (if public)
-```
+- **JMAP** for email/mailbox operations (modern JSON API)
+- **CardDAV/CalDAV** for contacts/calendar (WebDAV protocols)
+- **MCP** for AI agent integration (stdio JSON-RPC)
 
 ## Development
 
-### Prerequisites
-
-- Go 1.22+
-- [Task](https://taskfile.dev/) - task runner
-- [golangci-lint](https://golangci-lint.run/) - linter
-- [mockery](https://vektra.github.io/mockery/) - mock generator
-
-### Build
-
 ```bash
-task build
-./bin/fastmail-cli --help
+# Run tests
+go test ./...
+
+# Build
+go build ./cmd/fastmail-cli
+
+# Lint
+golangci-lint run
 ```
 
-### Test
+## Conventions
 
-```bash
-task test                 # Run tests
-task test:coverage        # Generate coverage report
-```
-
-## Coding Standards
-
-- Use `internal/` for private packages
-- Interfaces in consumer packages, implementations separate
-- Table-driven tests with descriptive names
-- Error wrapping with `fmt.Errorf("context: %w", err)`
+- Internal packages hide protocol complexity
+- Public API in `pkg/fastmail` for library consumers
 - Context as first parameter for cancellable operations
-
-## Configuration
-
-Configuration via environment variables and/or config file:
-
-| Variable | Description |
-|----------|-------------|
-| `FASTMAIL_API_TOKEN` | Fastmail API token |
-| `FASTMAIL_ACCOUNT_ID` | Account ID for JMAP requests |
+- Structured errors via `samber/oops`
+- Table-driven tests with fixtures
