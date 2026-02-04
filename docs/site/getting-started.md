@@ -96,4 +96,4 @@ fastmail-cli mcp serve
 ## Next Steps
 
 - Explore the [CLI Reference](reference/cli.md) for complete command documentation
-- Learn about [MCP Integration](reference/mcp.md) for AI assistant features
+- Learn about [MCP Integration](mcp/index.md) for AI assistant features

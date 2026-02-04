@@ -203,13 +203,13 @@ func (r *ResourceRegistry) handleMail(ctx context.Context, params map[string]str
 }
 
 // handleContacts returns the contact list.
-func (r *ResourceRegistry) handleContacts(ctx context.Context, _ map[string]string) (*ResourceContent, error) {
-	// Contacts service requires CardDAV client which may not be configured
+func (r *ResourceRegistry) handleContacts(_ context.Context, _ map[string]string) (*ResourceContent, error) {
+	// Contacts require CardDAV client which may not be configured via JMAP
 	// Return informative message if not available
 	return &ResourceContent{
 		URI:      "fastmail://contacts",
 		MimeType: "text/plain",
-		Text:     "Contact access requires CardDAV configuration. No contacts available.",
+		Text:     "Contacts access requires CardDAV configuration. Use the contacts_list tool instead.",
 	}, nil
 }
 
