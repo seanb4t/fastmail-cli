@@ -3,6 +3,8 @@ module github.com/seanb4t/fastmail-cli
 go 1.25.6
 
 require (
+	github.com/emersion/go-vcard v0.0.0-20241024213814-c9703dde27ff
+	github.com/google/uuid v1.6.0
 	github.com/samber/oops v1.21.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
