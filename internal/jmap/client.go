@@ -21,13 +21,28 @@ type Client struct {
 	session *Session
 }
 
+// ClientOption configures a Client.
+type ClientOption func(*Client)
+
+// WithHTTPClient sets a custom HTTP client for the JMAP client.
+// This is useful for testing with mock HTTP transports.
+func WithHTTPClient(httpClient *http.Client) ClientOption {
+	return func(c *Client) {
+		c.httpClient = httpClient
+	}
+}
+
 // NewClient creates a new JMAP client for the given endpoint and access token.
-func NewClient(endpoint, accessToken string) *Client {
-	return &Client{
+func NewClient(endpoint, accessToken string, opts ...ClientOption) *Client {
+	c := &Client{
 		endpoint:    endpoint,
 		accessToken: accessToken,
 		httpClient:  &http.Client{},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // Authenticate fetches a new session from the JMAP server.

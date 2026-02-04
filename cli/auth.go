@@ -1,15 +1,32 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
 	"syscall"
 
 	"github.com/seanb4t/fastmail-cli/internal/auth"
 	"github.com/seanb4t/fastmail-cli/internal/config"
+	"github.com/seanb4t/fastmail-cli/internal/jmap"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
+
+// AuthStatusError wraps an error with an exit code for the auth status command.
+type AuthStatusError struct {
+	Code    int
+	Message string
+}
+
+func (e *AuthStatusError) Error() string {
+	return e.Message
+}
+
+// authStatusHTTPClient allows injecting a custom HTTP client for testing.
+var authStatusHTTPClient *http.Client
 
 // newAuthCommand creates the auth subcommand with login/logout/status.
 func newAuthCommand() *cobra.Command {
@@ -113,8 +130,13 @@ func newAuthStatusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show authentication status",
-		Long:  "Show whether you are currently logged in.",
+		Long:  "Validate your FastMail API token and show authentication status.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+
 			configPath := GetConfigPath()
 			if configPath == "" {
 				configPath = config.DefaultConfigPath()
@@ -123,23 +145,80 @@ func newAuthStatusCommand() *cobra.Command {
 			store := auth.NewStore(configPath)
 			store.DisableKeychain() // Use file storage for now
 
-			loggedIn := store.HasToken()
-
-			if IsJSONOutput() {
-				result := map[string]any{
-					"logged_in": loggedIn,
+			// Check if token exists
+			token, err := store.GetToken()
+			if err != nil || token == "" {
+				if IsJSONOutput() {
+					_ = outputAuthJSON(cmd, map[string]any{
+						"authenticated": false,
+						"reason":        "no_token",
+					})
+				} else {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Not logged in")
 				}
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(result)
+				return &AuthStatusError{Code: ExitNoToken, Message: "no token stored"}
 			}
 
-			if loggedIn {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Logged in")
-			} else {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Not logged in")
+			// Validate token against API
+			var opts []jmap.ClientOption
+			if authStatusHTTPClient != nil {
+				opts = append(opts, jmap.WithHTTPClient(authStatusHTTPClient))
 			}
+			client := jmap.NewClient(jmap.DefaultSessionURL, token, opts...)
+			session, err := client.Authenticate(ctx)
+			if err != nil {
+				return handleAuthStatusError(cmd, err)
+			}
+
+			// Success
+			username := session.Username
+			if IsJSONOutput() {
+				return outputAuthJSON(cmd, map[string]any{
+					"authenticated": true,
+					"username":      username,
+				})
+			}
+
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Authenticated as %s\n", username)
 			return nil
 		},
 	}
+}
+
+func handleAuthStatusError(cmd *cobra.Command, err error) error {
+	// Check for auth errors (401, 403)
+	if isAuthError(err) {
+		if IsJSONOutput() {
+			_ = outputAuthJSON(cmd, map[string]any{
+				"authenticated": false,
+				"reason":        "invalid_token",
+			})
+		} else {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Token expired or revoked")
+		}
+		return &AuthStatusError{Code: ExitInvalidToken, Message: "token invalid"}
+	}
+
+	// Network error
+	if IsJSONOutput() {
+		_ = outputAuthJSON(cmd, map[string]any{
+			"authenticated": false,
+			"reason":        "network_error",
+			"error":         err.Error(),
+		})
+	} else {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Cannot reach FastMail API: %v\n", err)
+	}
+	return &AuthStatusError{Code: ExitNetworkError, Message: err.Error()}
+}
+
+func isAuthError(err error) bool {
+	errStr := err.Error()
+	return strings.Contains(errStr, "401") || strings.Contains(errStr, "403")
+}
+
+func outputAuthJSON(cmd *cobra.Command, data map[string]any) error {
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	return enc.Encode(data)
 }
