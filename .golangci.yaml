@@ -92,9 +92,10 @@ issues:
   max-same-issues: 0
 
   exclude-rules:
-    # Allow long lines in tests
+    # Allow repeated strings and complexity in tests
     - path: _test\.go
       linters:
         - dupl
         - gocognit
         - gocyclo
+        - goconst
