@@ -3,6 +3,8 @@ package fastmail
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -159,6 +161,228 @@ func TestExportJSONL(t *testing.T) {
 		count := strings.Count(output, "\n")
 		if count != 2 {
 			t.Errorf("expected 2 newlines, got %d", count)
+		}
+	})
+}
+
+func TestExportMaildir(t *testing.T) {
+	t.Run("creates maildir directory structure", func(t *testing.T) {
+		dir := t.TempDir()
+
+		err := ExportMaildir(dir, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Check standard Maildir subdirectories exist
+		for _, subdir := range []string{"cur", "new", "tmp"} {
+			path := filepath.Join(dir, subdir)
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Errorf("subdir %s not created: %v", subdir, err)
+				continue
+			}
+			if !info.IsDir() {
+				t.Errorf("%s should be a directory", subdir)
+			}
+		}
+	})
+
+	t.Run("writes email to cur directory", func(t *testing.T) {
+		dir := t.TempDir()
+		emails := []Email{
+			{
+				ID:         "email-1",
+				Subject:    "Test Subject",
+				From:       EmailAddress{Name: "Alice", Email: "alice@example.com"},
+				To:         []EmailAddress{{Name: "Bob", Email: "bob@example.com"}},
+				ReceivedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+				Body:       "Hello, World!",
+			},
+		}
+
+		err := ExportMaildir(dir, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Check that a file was created in cur/
+		entries, err := os.ReadDir(filepath.Join(dir, "cur"))
+		if err != nil {
+			t.Fatalf("failed to read cur directory: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("expected 1 file in cur/, got %d", len(entries))
+		}
+	})
+
+	t.Run("filename follows maildir convention", func(t *testing.T) {
+		dir := t.TempDir()
+		emails := []Email{
+			{
+				ID:         "email-1",
+				ReceivedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+				Keywords:   []string{"$seen"},
+			},
+		}
+
+		err := ExportMaildir(dir, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		entries, err := os.ReadDir(filepath.Join(dir, "cur"))
+		if err != nil {
+			t.Fatalf("failed to read cur directory: %v", err)
+		}
+
+		filename := entries[0].Name()
+		// Maildir filename format: timestamp.unique.hostname:info
+		// The :info part contains flags, :2,S means Seen
+		if !strings.Contains(filename, ":") {
+			t.Errorf("filename should contain ':' separator: %s", filename)
+		}
+		if !strings.Contains(filename, ".") {
+			t.Errorf("filename should contain '.' separators: %s", filename)
+		}
+		// Seen emails should have S flag
+		if !strings.HasSuffix(filename, "S") && !strings.Contains(filename, "S") {
+			t.Errorf("seen email should have S flag in filename: %s", filename)
+		}
+	})
+
+	t.Run("message content is valid RFC 5322", func(t *testing.T) {
+		dir := t.TempDir()
+		emails := []Email{
+			{
+				ID:         "email-1",
+				Subject:    "Test Subject",
+				From:       EmailAddress{Name: "Alice", Email: "alice@example.com"},
+				To:         []EmailAddress{{Name: "Bob", Email: "bob@example.com"}},
+				ReceivedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+				Body:       "Hello, World!",
+			},
+		}
+
+		err := ExportMaildir(dir, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		entries, err := os.ReadDir(filepath.Join(dir, "cur"))
+		if err != nil {
+			t.Fatalf("failed to read cur directory: %v", err)
+		}
+
+		content, err := os.ReadFile(filepath.Join(dir, "cur", entries[0].Name()))
+		if err != nil {
+			t.Fatalf("failed to read message file: %v", err)
+		}
+
+		msg := string(content)
+
+		// RFC 5322 requires headers before body, separated by blank line
+		if !strings.Contains(msg, "\r\n\r\n") && !strings.Contains(msg, "\n\n") {
+			t.Error("message should have blank line between headers and body")
+		}
+
+		// Check required headers
+		if !strings.Contains(msg, "From:") {
+			t.Error("message should have From header")
+		}
+		if !strings.Contains(msg, "To:") {
+			t.Error("message should have To header")
+		}
+		if !strings.Contains(msg, "Subject:") {
+			t.Error("message should have Subject header")
+		}
+		if !strings.Contains(msg, "Date:") {
+			t.Error("message should have Date header")
+		}
+
+		// Check body content
+		if !strings.Contains(msg, "Hello, World!") {
+			t.Error("message should contain body content")
+		}
+	})
+
+	t.Run("multiple emails create multiple files", func(t *testing.T) {
+		dir := t.TempDir()
+		emails := []Email{
+			{ID: "email-1", Subject: "First", ReceivedAt: time.Now()},
+			{ID: "email-2", Subject: "Second", ReceivedAt: time.Now()},
+			{ID: "email-3", Subject: "Third", ReceivedAt: time.Now()},
+		}
+
+		err := ExportMaildir(dir, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		entries, err := os.ReadDir(filepath.Join(dir, "cur"))
+		if err != nil {
+			t.Fatalf("failed to read cur directory: %v", err)
+		}
+		if len(entries) != 3 {
+			t.Errorf("expected 3 files in cur/, got %d", len(entries))
+		}
+	})
+
+	t.Run("flagged email has F flag in filename", func(t *testing.T) {
+		dir := t.TempDir()
+		emails := []Email{
+			{
+				ID:         "email-1",
+				ReceivedAt: time.Now(),
+				Keywords:   []string{"$flagged"},
+			},
+		}
+
+		err := ExportMaildir(dir, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		entries, err := os.ReadDir(filepath.Join(dir, "cur"))
+		if err != nil {
+			t.Fatalf("failed to read cur directory: %v", err)
+		}
+
+		filename := entries[0].Name()
+		if !strings.Contains(filename, "F") {
+			t.Errorf("flagged email should have F flag in filename: %s", filename)
+		}
+	})
+
+	t.Run("handles special characters in subject", func(t *testing.T) {
+		dir := t.TempDir()
+		emails := []Email{
+			{
+				ID:         "email-1",
+				Subject:    "Test: Special chars & symbols <here>",
+				From:       EmailAddress{Email: "test@example.com"},
+				ReceivedAt: time.Now(),
+				Body:       "Body content",
+			},
+		}
+
+		err := ExportMaildir(dir, emails)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		entries, err := os.ReadDir(filepath.Join(dir, "cur"))
+		if err != nil {
+			t.Fatalf("failed to read cur directory: %v", err)
+		}
+
+		content, err := os.ReadFile(filepath.Join(dir, "cur", entries[0].Name()))
+		if err != nil {
+			t.Fatalf("failed to read message file: %v", err)
+		}
+
+		if !strings.Contains(string(content), "Subject:") {
+			t.Error("message should have Subject header")
 		}
 	})
 }
