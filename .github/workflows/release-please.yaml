@@ -1,3 +1,4 @@
+# Requires: Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"
 name: Release Please
 
 on:
