@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+
 	"github.com/seanb4t/fastmail-cli/internal/jmap"
 )
 

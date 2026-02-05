@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 	"github.com/spf13/cobra"
+
+	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
 
 // newMaskedEmailCommand creates the masked-email command with subcommands.

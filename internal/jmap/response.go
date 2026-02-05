@@ -40,11 +40,7 @@ func (r *MethodResult) UnmarshalJSON(data []byte) error {
 	}
 	// Keep Args as raw JSON for later decoding
 	r.Args = arr[1]
-	if err := json.Unmarshal(arr[2], &r.CallID); err != nil {
-		return err
-	}
-
-	return nil
+	return json.Unmarshal(arr[2], &r.CallID)
 }
 
 // IsError returns true if this method result is an error response.

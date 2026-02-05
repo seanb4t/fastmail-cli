@@ -139,7 +139,7 @@ func (c *CardDAVClient) ListContacts(ctx context.Context, addressBookPath string
 // GetContact retrieves a single contact by path.
 func (c *CardDAVClient) GetContact(ctx context.Context, contactPath string) (*Contact, error) {
 	url := c.baseURL + contactPath
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, oops.Wrapf(err, "creating request")
 	}
@@ -248,7 +248,7 @@ func (c *CardDAVClient) UpdateContact(ctx context.Context, contact *Contact) err
 // DeleteContact removes a contact.
 func (c *CardDAVClient) DeleteContact(ctx context.Context, contactPath string) error {
 	url := c.baseURL + contactPath
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, http.NoBody)
 	if err != nil {
 		return oops.Wrapf(err, "creating request")
 	}

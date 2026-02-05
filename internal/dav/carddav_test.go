@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/seanb4t/fastmail-cli/internal/dav"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seanb4t/fastmail-cli/internal/dav"
 )
 
 func TestCardDAVClient_ListAddressBooks(t *testing.T) {

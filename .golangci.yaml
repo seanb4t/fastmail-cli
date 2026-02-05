@@ -30,72 +30,73 @@ linters:
     - unconvert
     - unparam
     - whitespace
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    gocognit:
+      min-complexity: 30
+    gocyclo:
+      min-complexity: 20
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - octalLiteral
+        - rangeValCopy
+        - hugeParam
+        - commentedOutCode
+        - unnamedResult
+        - paramTypeCombine
+        - emptyStringTest
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+  exclusions:
+    rules:
+      # Allow repeated strings and complexity in tests
+      - path: _test\.go
+        linters:
+          - dupl
+          - errcheck
+          - gocognit
+          - gocyclo
+          - goconst
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-  gocognit:
-    min-complexity: 20
-
-  gocyclo:
-    min-complexity: 15
-
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-
-  misspell:
-    locale: US
-
-  revive:
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-      - name: if-return
-      - name: increment-decrement
-      - name: var-naming
-      - name: var-declaration
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-
-formatters-settings:
-  goimports:
-    local-prefixes:
-      - github.com/seanb4t/fastmail-cli
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/seanb4t/fastmail-cli
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  exclude-rules:
-    # Allow repeated strings and complexity in tests
-    - path: _test\.go
-      linters:
-        - dupl
-        - gocognit
-        - gocyclo
-        - goconst

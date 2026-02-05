@@ -7,8 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 	"golang.org/x/term"
+
+	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
 
 // Options controls output formatting behavior.

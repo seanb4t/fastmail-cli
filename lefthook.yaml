@@ -12,11 +12,7 @@ pre-commit:
   commands:
     lint-go:
       glob: "*.go"
-      run: golangci-lint run --new-from-rev=HEAD~1
-      stage_fixed: true
-    format-imports:
-      glob: "*.go"
-      run: goimports -w -local github.com/seanb4t/fastmail-cli {staged_files}
+      run: golangci-lint run --fix --new-from-rev=HEAD~1
       stage_fixed: true
 
 commit-msg:

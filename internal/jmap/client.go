@@ -48,7 +48,7 @@ func NewClient(endpoint, accessToken string, opts ...ClientOption) *Client {
 // Authenticate fetches a new session from the JMAP server.
 // This always makes a network request, unlike Session which caches.
 func (c *Client) Authenticate(ctx context.Context) (*Session, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

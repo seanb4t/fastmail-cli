@@ -44,11 +44,7 @@ func (i *Invocation) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(arr[1], &i.Args); err != nil {
 		return err
 	}
-	if err := json.Unmarshal(arr[2], &i.CallID); err != nil {
-		return err
-	}
-
-	return nil
+	return json.Unmarshal(arr[2], &i.CallID)
 }
 
 // ResultRef represents a JMAP result reference for method chaining.

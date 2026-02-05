@@ -6,9 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/seanb4t/fastmail-cli/internal/dav"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seanb4t/fastmail-cli/internal/dav"
 )
 
 func TestContactsService_List(t *testing.T) {

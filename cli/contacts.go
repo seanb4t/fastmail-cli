@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/spf13/cobra"
+
 	"github.com/seanb4t/fastmail-cli/internal/auth"
 	"github.com/seanb4t/fastmail-cli/internal/config"
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
-	"github.com/spf13/cobra"
 )
 
 // newContactsCommand creates the contacts command with subcommands.

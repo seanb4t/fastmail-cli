@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samber/oops"
+
 	"github.com/seanb4t/fastmail-cli/internal/dav"
 )
 

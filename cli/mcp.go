@@ -7,9 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/seanb4t/fastmail-cli/mcp"
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
-	"github.com/spf13/cobra"
 )
 
 // newMCPCommand creates the mcp command that runs the MCP server.

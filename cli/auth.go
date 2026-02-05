@@ -8,11 +8,12 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
 	"github.com/seanb4t/fastmail-cli/internal/auth"
 	"github.com/seanb4t/fastmail-cli/internal/config"
 	"github.com/seanb4t/fastmail-cli/internal/jmap"
-	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 // authStatusHTTPClient allows injecting a custom HTTP client for testing.

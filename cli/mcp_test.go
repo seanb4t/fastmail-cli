@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seanb4t/fastmail-cli/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seanb4t/fastmail-cli/mcp"
 )
 
 func TestNewMCPCommand(t *testing.T) {

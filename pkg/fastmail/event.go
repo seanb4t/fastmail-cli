@@ -38,7 +38,7 @@ type Event struct {
 	// Empty if the event does not recur.
 	RecurrenceRule string
 
-	// Status is the event status (e.g., "CONFIRMED", "TENTATIVE", "CANCELLED").
+	// Status is the event status (e.g., "CONFIRMED", "TENTATIVE", "CANCELED").
 	Status string
 
 	// Created is when the event was created.
