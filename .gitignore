@@ -44,3 +44,4 @@ lefthook.local.yaml
 .claude/
 .beads/
 .logs/
+.worktrees/
