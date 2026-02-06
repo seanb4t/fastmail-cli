@@ -9,6 +9,7 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -31,6 +32,7 @@ const (
 type Store struct {
 	configPath      string
 	keychainEnabled bool
+	warningWriter   io.Writer
 }
 
 // NewStore creates a new Store with the given config file path.
@@ -38,12 +40,18 @@ func NewStore(configPath string) *Store {
 	return &Store{
 		configPath:      configPath,
 		keychainEnabled: true,
+		warningWriter:   os.Stderr,
 	}
 }
 
 // DisableKeychain disables keychain access for testing.
 func (s *Store) DisableKeychain() {
 	s.keychainEnabled = false
+}
+
+// SetWarningWriter sets the writer for fallback warnings.
+func (s *Store) SetWarningWriter(w io.Writer) {
+	s.warningWriter = w
 }
 
 // GetToken retrieves the token from the highest-priority source available.
@@ -59,6 +67,9 @@ func (s *Store) GetToken() (string, error) {
 		token, err := keyring.Get(KeyringService, KeyringUser)
 		if err == nil && token != "" {
 			return token, nil
+		}
+		if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			s.warnKeychainFallback(err)
 		}
 		// Ignore keychain errors - fall through to file
 	}
@@ -79,6 +90,7 @@ func (s *Store) SetToken(token string) error {
 		if err == nil {
 			return nil
 		}
+		s.warnKeychainFallback(err)
 		// Fall through to file if keychain fails
 	}
 
@@ -87,24 +99,33 @@ func (s *Store) SetToken(token string) error {
 
 // DeleteToken removes the token from all storage locations.
 func (s *Store) DeleteToken() error {
-	var lastErr error
+	var keychainErr error
 
 	// Delete from keychain if enabled
 	if s.keychainEnabled {
 		if err := keyring.Delete(KeyringService, KeyringUser); err != nil {
 			// Ignore "not found" errors
-			if !errors.Is(err, keyring.ErrNotFound) {
-				lastErr = err
+			if errors.Is(err, keyring.ErrNotFound) {
+				// nothing to do
+			} else {
+				s.warnKeychainFallback(err)
+				if !errors.Is(err, keyring.ErrUnsupportedPlatform) {
+					keychainErr = err
+				}
 			}
 		}
 	}
 
 	// Delete from config file
 	if err := s.deleteFileToken(); err != nil {
-		lastErr = err
+		return err
 	}
 
-	return lastErr
+	if keychainErr != nil {
+		return keychainErr
+	}
+
+	return nil
 }
 
 // HasToken returns true if a token is available from any source.
@@ -185,4 +206,11 @@ func (s *Store) deleteFileToken() error {
 	v.Set("token", "")
 
 	return v.WriteConfig()
+}
+
+func (s *Store) warnKeychainFallback(err error) {
+	if s.warningWriter == nil || err == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(s.warningWriter, "Warning: keychain unavailable (%v); falling back to config file\n", err)
 }

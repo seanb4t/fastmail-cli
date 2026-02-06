@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -190,7 +191,7 @@ func createClient() (*fastmail.Client, error) {
 
 	// Get token from auth store
 	store := auth.NewStore(configPath)
-	store.DisableKeychain()
+	setStoreWarningWriter(store, os.Stderr)
 
 	token, err := store.GetToken()
 	if err != nil {

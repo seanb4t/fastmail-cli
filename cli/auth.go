@@ -3,9 +3,12 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
-	"strings"
+	"net/url"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -18,6 +21,9 @@ import (
 
 // authStatusHTTPClient allows injecting a custom HTTP client for testing.
 var authStatusHTTPClient *http.Client
+
+// authLoginHTTPClient allows injecting a custom HTTP client for testing.
+var authLoginHTTPClient *http.Client
 
 // newAuthCommand creates the auth subcommand with login/logout/status.
 func newAuthCommand() *cobra.Command {
@@ -43,13 +49,18 @@ func newAuthLoginCommand() *cobra.Command {
 		Short: "Store API token",
 		Long:  "Store your FastMail API token for authentication.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+
 			configPath := GetConfigPath()
 			if configPath == "" {
 				configPath = config.DefaultConfigPath()
 			}
 
 			store := auth.NewStore(configPath)
-			store.DisableKeychain() // Use file storage for now
+			setAuthStoreWarningWriter(cmd, store)
 
 			var token string
 			if tokenFlag != "" {
@@ -71,6 +82,31 @@ func newAuthLoginCommand() *cobra.Command {
 
 			if token == "" {
 				return fmt.Errorf("token cannot be empty")
+			}
+
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				if !IsQuiet() {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to load config (%v); using default endpoint\n", err)
+				}
+				cfg = &config.Config{Endpoint: jmap.DefaultSessionURL}
+			}
+
+			endpoint := cfg.Endpoint
+			if endpoint == "" {
+				endpoint = jmap.DefaultSessionURL
+			}
+
+			var opts []jmap.ClientOption
+			if authLoginHTTPClient != nil {
+				opts = append(opts, jmap.WithHTTPClient(authLoginHTTPClient))
+			}
+			client := jmap.NewClient(endpoint, token, opts...)
+			if _, err := client.Authenticate(ctx); err != nil {
+				if isAuthError(err) {
+					return fmt.Errorf("invalid token")
+				}
+				return fmt.Errorf("validating token: %w", err)
 			}
 
 			if err := store.SetToken(token); err != nil {
@@ -102,7 +138,7 @@ func newAuthLogoutCommand() *cobra.Command {
 			}
 
 			store := auth.NewStore(configPath)
-			store.DisableKeychain() // Use file storage for now
+			setAuthStoreWarningWriter(cmd, store)
 
 			if err := store.DeleteToken(); err != nil {
 				return fmt.Errorf("removing token: %w", err)
@@ -132,9 +168,16 @@ func newAuthStatusCommand() *cobra.Command {
 			if configPath == "" {
 				configPath = config.DefaultConfigPath()
 			}
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				if !IsQuiet() {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to load config (%v); using default endpoint\n", err)
+				}
+				cfg = &config.Config{Endpoint: jmap.DefaultSessionURL}
+			}
 
 			store := auth.NewStore(configPath)
-			store.DisableKeychain() // Use file storage for now
+			setAuthStoreWarningWriter(cmd, store)
 
 			// Check if token exists
 			token, err := store.GetToken()
@@ -155,7 +198,11 @@ func newAuthStatusCommand() *cobra.Command {
 			if authStatusHTTPClient != nil {
 				opts = append(opts, jmap.WithHTTPClient(authStatusHTTPClient))
 			}
-			client := jmap.NewClient(jmap.DefaultSessionURL, token, opts...)
+			endpoint := cfg.Endpoint
+			if !IsQuiet() {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Resolved JMAP endpoint: %s\n", endpoint)
+			}
+			client := jmap.NewClient(endpoint, token, opts...)
 			session, err := client.Authenticate(ctx)
 			if err != nil {
 				return handleAuthStatusError(cmd, err)
@@ -176,6 +223,18 @@ func newAuthStatusCommand() *cobra.Command {
 	}
 }
 
+func setAuthStoreWarningWriter(cmd *cobra.Command, store *auth.Store) {
+	setStoreWarningWriter(store, cmd.ErrOrStderr())
+}
+
+func setStoreWarningWriter(store *auth.Store, errWriter io.Writer) {
+	if IsQuiet() {
+		store.SetWarningWriter(io.Discard)
+		return
+	}
+	store.SetWarningWriter(errWriter)
+}
+
 func handleAuthStatusError(cmd *cobra.Command, err error) error {
 	// Check for auth errors (401, 403)
 	if isAuthError(err) {
@@ -190,22 +249,66 @@ func handleAuthStatusError(cmd *cobra.Command, err error) error {
 		return &AuthStatusError{Code: ExitInvalidToken, Message: "token invalid"}
 	}
 
-	// Network error
+	if isNetworkError(err) {
+		// Network error
+		if IsJSONOutput() {
+			_ = outputAuthJSON(cmd, map[string]any{
+				"authenticated": false,
+				"reason":        "network_error",
+				"error":         err.Error(),
+			})
+		} else {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Cannot reach FastMail API: %v\n", err)
+		}
+		return &AuthStatusError{Code: ExitNetworkError, Message: err.Error()}
+	}
+
 	if IsJSONOutput() {
 		_ = outputAuthJSON(cmd, map[string]any{
 			"authenticated": false,
-			"reason":        "network_error",
-			"error":         err.Error(),
+			"reason":        "auth_error",
 		})
 	} else {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Cannot reach FastMail API: %v\n", err)
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Authentication failed")
 	}
-	return &AuthStatusError{Code: ExitNetworkError, Message: err.Error()}
+	return &AuthStatusError{Code: ExitAuthError, Message: err.Error()}
 }
 
 func isAuthError(err error) bool {
-	errStr := err.Error()
-	return strings.Contains(errStr, "401") || strings.Contains(errStr, "403")
+	if httpErr, ok := asHTTPError(err); ok {
+		return httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden
+	}
+	return false
+}
+
+func asHTTPError(err error) (*jmap.HTTPError, bool) {
+	var httpErr *jmap.HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr, true
+	}
+	return nil, false
+}
+
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return true
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+
+	return false
 }
 
 func outputAuthJSON(cmd *cobra.Command, data map[string]any) error {

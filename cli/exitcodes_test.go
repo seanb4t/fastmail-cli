@@ -15,6 +15,7 @@ func TestExitCodesCompile(t *testing.T) {
 		{"ExitNoToken", ExitNoToken, 1},
 		{"ExitInvalidToken", ExitInvalidToken, 2},
 		{"ExitNetworkError", ExitNetworkError, 3},
+		{"ExitAuthError", ExitAuthError, 4},
 	}
 
 	for _, tt := range tests {

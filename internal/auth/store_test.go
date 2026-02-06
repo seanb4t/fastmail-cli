@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 func TestStore_EnvToken(t *testing.T) {
@@ -139,6 +142,64 @@ func TestStore_DeleteToken(t *testing.T) {
 
 	_, err = store.GetToken()
 	assert.Error(t, err)
+}
+
+func mockKeyringError(t *testing.T, err error) {
+	t.Helper()
+	keyring.MockInitWithError(err)
+	t.Cleanup(keyring.MockInit)
+}
+
+func TestStore_DeleteToken_ReturnsErrorOnKeychainFailure(t *testing.T) {
+	mockKeyringError(t, errors.New("keychain delete failed"))
+
+	t.Setenv("FASTMAIL_TOKEN", "")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `token: token-to-delete
+`
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	store := NewStore(configPath)
+	warningOutput := new(bytes.Buffer)
+	store.SetWarningWriter(warningOutput)
+
+	err = store.DeleteToken()
+	assert.Error(t, err)
+	assert.Contains(t, warningOutput.String(), "Warning: keychain unavailable")
+
+	configBytes, err := os.ReadFile(filepath.Clean(configPath))
+	require.NoError(t, err)
+	assert.NotContains(t, string(configBytes), "token-to-delete")
+}
+
+func TestStore_DeleteToken_IgnoresUnsupportedKeychain(t *testing.T) {
+	mockKeyringError(t, keyring.ErrUnsupportedPlatform)
+
+	t.Setenv("FASTMAIL_TOKEN", "")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `token: token-to-delete
+`
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	store := NewStore(configPath)
+	warningOutput := new(bytes.Buffer)
+	store.SetWarningWriter(warningOutput)
+
+	err = store.DeleteToken()
+	require.NoError(t, err)
+	assert.Contains(t, warningOutput.String(), "Warning: keychain unavailable")
+
+	configBytes, err := os.ReadFile(filepath.Clean(configPath))
+	require.NoError(t, err)
+	assert.NotContains(t, string(configBytes), "token-to-delete")
 }
 
 func TestStore_EmptyEnvToken(t *testing.T) {
