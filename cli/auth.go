@@ -49,64 +49,19 @@ func newAuthLoginCommand() *cobra.Command {
 		Short: "Store API token",
 		Long:  "Store your FastMail API token for authentication.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
-
-			configPath := GetConfigPath()
-			if configPath == "" {
-				configPath = config.DefaultConfigPath()
-			}
-
+			ctx := commandContext(cmd)
+			configPath := defaultConfigPath()
 			store := auth.NewStore(configPath)
 			setAuthStoreWarningWriter(cmd, store)
 
-			var token string
-			if tokenFlag != "" {
-				token = tokenFlag
-			} else {
-				// Interactive mode - prompt for token
-				if !term.IsTerminal(syscall.Stdin) {
-					return fmt.Errorf("no token provided: use --token flag or run interactively")
-				}
-
-				_, _ = fmt.Fprint(cmd.OutOrStdout(), "Enter API token: ")
-				tokenBytes, err := term.ReadPassword(syscall.Stdin)
-				if err != nil {
-					return fmt.Errorf("reading token: %w", err)
-				}
-				_, _ = fmt.Fprintln(cmd.OutOrStdout()) // newline after hidden input
-				token = string(tokenBytes)
-			}
-
-			if token == "" {
-				return fmt.Errorf("token cannot be empty")
-			}
-
-			cfg, err := config.Load(configPath)
+			token, err := resolveLoginToken(cmd, tokenFlag)
 			if err != nil {
-				if !IsQuiet() {
-					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to load config (%v); using default endpoint\n", err)
-				}
-				cfg = &config.Config{Endpoint: jmap.DefaultSessionURL}
+				return err
 			}
 
-			endpoint := cfg.Endpoint
-			if endpoint == "" {
-				endpoint = jmap.DefaultSessionURL
-			}
-
-			var opts []jmap.ClientOption
-			if authLoginHTTPClient != nil {
-				opts = append(opts, jmap.WithHTTPClient(authLoginHTTPClient))
-			}
-			client := jmap.NewClient(endpoint, token, opts...)
-			if _, err := client.Authenticate(ctx); err != nil {
-				if isAuthError(err) {
-					return fmt.Errorf("invalid token")
-				}
-				return fmt.Errorf("validating token: %w", err)
+			endpoint := loadAuthEndpoint(cmd, configPath)
+			if err := validateToken(ctx, endpoint, token); err != nil {
+				return err
 			}
 
 			if err := store.SetToken(token); err != nil {
@@ -225,6 +180,76 @@ func newAuthStatusCommand() *cobra.Command {
 
 func setAuthStoreWarningWriter(cmd *cobra.Command, store *auth.Store) {
 	setStoreWarningWriter(store, cmd.ErrOrStderr())
+}
+
+func commandContext(cmd *cobra.Command) context.Context {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return ctx
+}
+
+func defaultConfigPath() string {
+	configPath := GetConfigPath()
+	if configPath == "" {
+		configPath = config.DefaultConfigPath()
+	}
+	return configPath
+}
+
+func resolveLoginToken(cmd *cobra.Command, tokenFlag string) (string, error) {
+	if tokenFlag != "" {
+		return tokenFlag, nil
+	}
+
+	if !term.IsTerminal(syscall.Stdin) {
+		return "", fmt.Errorf("no token provided: use --token flag or run interactively")
+	}
+
+	_, _ = fmt.Fprint(cmd.OutOrStdout(), "Enter API token: ")
+	tokenBytes, err := term.ReadPassword(syscall.Stdin)
+	if err != nil {
+		return "", fmt.Errorf("reading token: %w", err)
+	}
+	_, _ = fmt.Fprintln(cmd.OutOrStdout())
+
+	if token := string(tokenBytes); token != "" {
+		return token, nil
+	}
+
+	return "", fmt.Errorf("token cannot be empty")
+}
+
+func loadAuthEndpoint(cmd *cobra.Command, configPath string) string {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		if !IsQuiet() {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to load config (%v); using default endpoint\n", err)
+		}
+		cfg = &config.Config{Endpoint: jmap.DefaultSessionURL}
+	}
+
+	if cfg.Endpoint == "" {
+		return jmap.DefaultSessionURL
+	}
+
+	return cfg.Endpoint
+}
+
+func validateToken(ctx context.Context, endpoint, token string) error {
+	var opts []jmap.ClientOption
+	if authLoginHTTPClient != nil {
+		opts = append(opts, jmap.WithHTTPClient(authLoginHTTPClient))
+	}
+	client := jmap.NewClient(endpoint, token, opts...)
+	if _, err := client.Authenticate(ctx); err != nil {
+		if isAuthError(err) {
+			return fmt.Errorf("invalid token")
+		}
+		return fmt.Errorf("validating token: %w", err)
+	}
+	return nil
 }
 
 func setStoreWarningWriter(store *auth.Store, errWriter io.Writer) {
