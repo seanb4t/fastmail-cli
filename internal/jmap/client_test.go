@@ -110,7 +110,10 @@ func TestClient_AuthenticateError(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, session)
-	assert.Contains(t, err.Error(), "401")
+	var httpErr *HTTPError
+	if assert.ErrorAs(t, err, &httpErr) {
+		assert.Equal(t, http.StatusUnauthorized, httpErr.StatusCode)
+	}
 }
 
 func TestClient_Session_Cached(t *testing.T) {
@@ -307,7 +310,10 @@ func TestClient_Call_HTTPError(t *testing.T) {
 	resp, err := client.Call(ctx, req)
 	assert.Error(t, err)
 	assert.Nil(t, resp)
-	assert.Contains(t, err.Error(), "500")
+	var httpErr *HTTPError
+	if assert.ErrorAs(t, err, &httpErr) {
+		assert.Equal(t, http.StatusInternalServerError, httpErr.StatusCode)
+	}
 }
 
 func TestClient_Call_SessionError(t *testing.T) {

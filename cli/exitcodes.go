@@ -6,6 +6,7 @@ const (
 	ExitNoToken      = 1 // No token stored
 	ExitInvalidToken = 2 // Token expired or revoked
 	ExitNetworkError = 3 // Cannot reach API
+	ExitAuthError    = 4 // Authentication failed
 )
 
 // AuthStatusError wraps an error with an exit code for auth status commands.

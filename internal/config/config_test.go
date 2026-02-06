@@ -26,6 +26,7 @@ func TestLoad_DefaultValues(t *testing.T) {
 
 	// Clear any environment variables that could interfere
 	t.Setenv("FASTMAIL_ENDPOINT", "")
+	t.Setenv("FASTMAIL_CARDDAV_ENDPOINT", "")
 	t.Setenv("FASTMAIL_OUTPUT_FORMAT", "")
 	t.Setenv("FASTMAIL_TOKEN", "")
 
@@ -34,6 +35,7 @@ func TestLoad_DefaultValues(t *testing.T) {
 
 	// Verify defaults
 	assert.Equal(t, "https://api.fastmail.com/jmap/session", cfg.Endpoint)
+	assert.Equal(t, "https://carddav.fastmail.com/dav/", cfg.CardDAVEndpoint)
 	assert.Equal(t, "auto", cfg.OutputFormat)
 	assert.Equal(t, "", cfg.Token)
 }
@@ -105,6 +107,81 @@ token: file-token-456
 	// File values should remain for the rest
 	assert.Equal(t, "text", cfg.OutputFormat)
 	assert.Equal(t, "file-token-456", cfg.Token)
+}
+
+func TestLoad_PreservesCardDAVEndpointFromFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `endpoint: https://api.example.com/jmap/session
+carddav_endpoint: https://carddav.override.test/dav/
+`
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	t.Setenv("FASTMAIL_ENDPOINT", "")
+	t.Setenv("FASTMAIL_CARDDAV_ENDPOINT", "")
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://api.example.com/jmap/session", cfg.Endpoint)
+	assert.Equal(t, "https://carddav.override.test/dav/", cfg.CardDAVEndpoint)
+}
+
+func TestLoad_PreservesCardDAVEndpointFromEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `endpoint: https://api.example.com/jmap/session
+carddav_endpoint: https://carddav.file.test/dav/
+`
+	err := os.WriteFile(configPath, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	t.Setenv("FASTMAIL_ENDPOINT", "https://api.env.test/jmap/session")
+	t.Setenv("FASTMAIL_CARDDAV_ENDPOINT", "https://carddav.env.test/dav/")
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://api.env.test/jmap/session", cfg.Endpoint)
+	assert.Equal(t, "https://carddav.env.test/dav/", cfg.CardDAVEndpoint)
+}
+
+func TestDeriveCardDAVEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		expected string
+	}{
+		{
+			name:     "empty defaults",
+			endpoint: "",
+			expected: defaultCardDAVEndpoint,
+		},
+		{
+			name:     "api host converts to carddav host",
+			endpoint: "https://api.fastmail.com/jmap/session",
+			expected: "https://carddav.fastmail.com/dav/",
+		},
+		{
+			name:     "non-api host preserved",
+			endpoint: "https://mail.example.com/jmap/session",
+			expected: "https://mail.example.com/dav/",
+		},
+		{
+			name:     "invalid url defaults",
+			endpoint: "://bad",
+			expected: defaultCardDAVEndpoint,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, deriveCardDAVEndpoint(tc.endpoint))
+		})
+	}
 }
 
 func TestConfig_Validate_ValidOutputFormats(t *testing.T) {

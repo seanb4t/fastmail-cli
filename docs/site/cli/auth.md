@@ -84,6 +84,7 @@ fastmail-cli auth status
 | 1 | No token stored |
 | 2 | Token expired or revoked |
 | 3 | Cannot reach FastMail API |
+| 4 | Authentication failed |
 
 ### Output
 
@@ -98,6 +99,10 @@ Not logged in
 or
 ```
 Token expired or revoked
+```
+or
+```
+Authentication failed
 ```
 or
 ```
@@ -117,6 +122,14 @@ When not authenticated:
 {
   "authenticated": false,
   "reason": "no_token"
+}
+```
+
+Authentication failures:
+```json
+{
+  "authenticated": false,
+  "reason": "auth_error"
 }
 ```
 

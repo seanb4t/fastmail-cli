@@ -21,6 +21,20 @@ type Client struct {
 	session *Session
 }
 
+// HTTPError represents a non-200 HTTP response.
+type HTTPError struct {
+	StatusCode int
+	Body       string
+}
+
+// Error implements the error interface.
+func (e *HTTPError) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("unexpected status: %d", e.StatusCode)
+	}
+	return fmt.Sprintf("unexpected status %d: %s", e.StatusCode, e.Body)
+}
+
 // ClientOption configures a Client.
 type ClientOption func(*Client)
 
@@ -63,7 +77,8 @@ func (c *Client) Authenticate(ctx context.Context) (*Session, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var session Session
@@ -122,7 +137,7 @@ func (c *Client) Call(ctx context.Context, request *Request) (*Response, error) 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var response Response

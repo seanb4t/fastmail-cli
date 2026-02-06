@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -234,7 +235,7 @@ func createContactsClient() (*fastmail.ContactsClient, error) {
 
 	// Get token from auth store (used as CardDAV password)
 	store := auth.NewStore(configPath)
-	store.DisableKeychain()
+	setStoreWarningWriter(store, os.Stderr)
 
 	token, err := store.GetToken()
 	if err != nil {
