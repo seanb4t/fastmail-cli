@@ -255,7 +255,7 @@ Uses existing `CalendarService.ListCalendars()`.
 
 ### `identity list`
 
-Read-only. Lists sender identities from JMAP Identity/get (requires `urn:ietf:params:jmap:submission` capability, not `CapMail`).
+Read-only. Lists sender identities from JMAP Identity/get (requires `CapSubmission`, not `CapMail`).
 
 ```
 ID       Name           Email                    May Delete
@@ -320,7 +320,7 @@ Two JMAP calls: Thread/get for emailIds, then Email/get for summaries.
 
 ## MCP Tool Parity
 
-**Note:** Tools in `mcp/tools_mail.go` are registered via `RegisterMailTools()`, but `cli/mcp.go` currently only wires mail + masked-email tools via separate inline functions. Contact and calendar tools are **defined but not wired** into the CLI's MCP server. Phase 3/5 must also fix this wiring.
+**Note:** Tools in `mcp/tools_mail.go` are registered via `RegisterMailTools()`, but `cli/mcp.go` currently only wires mail + masked-email tools via ~180 lines of duplicated inline registration functions. Contact and calendar tools are **defined but not wired** into the CLI's MCP server. Phase 3/5 must refactor `cli/mcp.go` to call `mcp.RegisterMailTools()` directly instead of maintaining separate inline functions, and wire in the missing tools.
 
 | CLI Command | MCP Tool | MCP Resource | Status |
 |---|---|---|---|
@@ -406,7 +406,7 @@ Two JMAP calls: Thread/get for emailIds, then Email/get for summaries.
 ### Phase 3 — Calendar CLI
 
 9. `cli/calendar.go` — All 6 calendar subcommands (create DAV client following `cli/contacts.go` pattern)
-10. `mcp/calendar_tools.go` — New + updated MCP tools; wire contact + calendar tools into `cli/mcp.go`
+10. `mcp/calendar_tools.go` — New + updated MCP tools; refactor `cli/mcp.go` to use `mcp.RegisterMailTools()` and wire all tools
 
 ### Phase 4 — Identity, Vacation, Thread
 
