@@ -49,6 +49,7 @@ func NewRootCommand() *RootCommand {
 	root.cmd.AddCommand(newContactsCommand())
 	root.cmd.AddCommand(newCalendarCommand())
 	root.cmd.AddCommand(newIdentityCommand())
+	root.cmd.AddCommand(newVacationCommand())
 	root.cmd.AddCommand(newExportCommand())
 	root.cmd.AddCommand(newMCPCommand())
 

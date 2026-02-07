@@ -67,6 +67,11 @@ func (c *Client) Identity() *IdentityService {
 	}
 }
 
+// Vacation returns the vacation service for auto-reply operations.
+func (c *Client) Vacation() *VacationService {
+	return &VacationService{client: c}
+}
+
 // accountID returns the current account ID, fetching session if needed.
 func (c *Client) getAccountID(ctx context.Context) (string, error) {
 	if c.accountID != "" {

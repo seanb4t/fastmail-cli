@@ -35,6 +35,7 @@ func RegisterMailTools(s *Server, cfg ToolsConfig) {
 	registerMailboxTools(s, cfg)
 	registerMaskedEmailTools(s, cfg)
 	registerIdentityTools(s, cfg)
+	registerVacationTools(s, cfg)
 	registerContactTools(s, cfg)
 	registerCalendarTools(s, cfg)
 }
@@ -388,6 +389,58 @@ func makeIdentityListHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Wrapf(err, "listing identities")
 		}
 		return identities, nil
+	}
+}
+
+// Vacation tools
+
+func registerVacationTools(s *Server, cfg ToolsConfig) {
+	s.RegisterTool(
+		NewTool("vacation_get", "Get current vacation auto-reply settings"),
+		makeVacationGetHandler(cfg),
+	)
+
+	s.RegisterTool(
+		NewTool("vacation_set", "Update vacation auto-reply settings").
+			WithProperty("enable", "boolean", "Enable vacation response").
+			WithProperty("disable", "boolean", "Disable vacation response").
+			WithProperty("from_date", "string", "Start date (RFC3339)").
+			WithProperty("to_date", "string", "End date (RFC3339)").
+			WithProperty("subject", "string", "Auto-reply subject").
+			WithProperty("text_body", "string", "Auto-reply body text"),
+		makeVacationSetHandler(cfg),
+	)
+}
+
+func makeVacationGetHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, _ map[string]any) (any, error) {
+		return cfg.Client.Vacation().Get(ctx)
+	}
+}
+
+func makeVacationSetHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		opts := fastmail.SetVacationOptions{
+			FromDate: getStringArg(args, "from_date", ""),
+			ToDate:   getStringArg(args, "to_date", ""),
+			Subject:  getStringArg(args, "subject", ""),
+			TextBody: getStringArg(args, "text_body", ""),
+		}
+
+		if getBoolArg(args, "enable", false) {
+			t := true
+			opts.IsEnabled = &t
+		}
+		if getBoolArg(args, "disable", false) {
+			f := false
+			opts.IsEnabled = &f
+		}
+
+		if err := cfg.Client.Vacation().Set(ctx, opts); err != nil {
+			return nil, oops.Wrapf(err, "setting vacation")
+		}
+
+		return map[string]any{"status": "updated"}, nil
 	}
 }
 
