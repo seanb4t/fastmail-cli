@@ -96,7 +96,7 @@ Attachments:
 
 **`--raw`:** Fetches blob via `downloadUrl`, writes raw bytes to stdout.
 
-**Service layer:** `MailService.Get()` exists. Add `MailService.GetRaw(ctx, id) (io.Reader, error)` for blob download. JMAP client needs `DownloadBlob(ctx, blobId) (io.Reader, error)`.
+**Service layer:** `MailService.Get()` exists but only requests metadata properties (`id, threadId, subject, preview, receivedAt, size, keywords, mailboxIds`). Add `MailService.GetFull(ctx, id)` that also requests `from, to, cc, bcc, bodyValues, textBody, htmlBody, attachments` for display. Add `MailService.GetRaw(ctx, id) (io.Reader, error)` for blob download. JMAP client needs `DownloadBlob(ctx, blobId) (io.Reader, error)` using the session's `downloadUrl` template.
 
 ### `mail search <query>`
 
@@ -115,12 +115,12 @@ Query string syntax matching Fastmail web UI conventions.
 | `has:attachment` | `hasAttachment: true` | `has:attachment` |
 | `before:<date>` | `before` | `before:2026-02-01` |
 | `after:<date>` | `after` | `after:2026-01-01` |
-| `is:unread` | `hasKeyword: $seen` (negated) | `is:unread` |
+| `is:unread` | `notKeyword: $seen` | `is:unread` |
 | `is:flagged` | `hasKeyword: $flagged` | `is:flagged` |
 | `in:<mailbox>` | `inMailbox` | `in:drafts` |
 | free text | `text` | `quarterly report` |
 
-Parser translates tokens into JMAP Email/query FilterCondition objects. Compound queries combine with AND. Uses existing `MailService.Search(ctx, query, limit)`.
+A new query parser (in `cli/` or `internal/`) translates tokens into JMAP Email/query FilterCondition objects. Compound queries combine with AND. The existing `MailService.Search()` only supports free-text (`text` filter); it must be refactored to accept structured `FilterCondition` arguments, or a new `MailService.SearchWithFilter(ctx, filter, limit)` method is needed.
 
 ### `mail move <ID>`
 
@@ -207,7 +207,7 @@ Ev123    2026-02-06  09:00-10:00 Team standup          Work
 Ev456    2026-02-06  All day     Mom's birthday        Personal
 ```
 
-Uses existing `CalendarService.ListEvents()`.
+Uses existing `CalendarService.ListEvents()`. Note: `CalendarService` uses a `dav.Client` (not the JMAP `Client`). The CLI calendar commands need a separate DAV client creation function, following the pattern in `cli/contacts.go` (which creates a `ContactsClient` independently of the JMAP `Client`).
 
 ### `calendar show <ID>`
 
@@ -255,7 +255,7 @@ Uses existing `CalendarService.ListCalendars()`.
 
 ### `identity list`
 
-Read-only. Lists sender identities from JMAP Identity/get.
+Read-only. Lists sender identities from JMAP Identity/get (requires `urn:ietf:params:jmap:submission` capability, not `CapMail`).
 
 ```
 ID       Name           Email                    May Delete
@@ -265,11 +265,15 @@ Id2      Work           sean@company.com          yes
 
 **JSON output:** Full Identity objects (id, name, email, replyTo, bcc, textSignature, htmlSignature, mayDelete).
 
+**Prerequisites:**
+- Fix `Identity.ReplyTo` and `Identity.BCC` field types in `internal/jmap/submission.go` from `string` to `[]EmailAddress` to match RFC 8621 Section 6.1.
+- Note: `IdentityGetBuilder` already exists in `internal/jmap/submission.go` and is used by `MailService.getDefaultIdentity()`. The new `IdentityService` should reuse this builder rather than duplicate it.
+
 No create/update/delete — identity management requires email verification via web UI.
 
 ### `vacation show`
 
-Read-only view of auto-reply settings from JMAP VacationResponse/get (singleton).
+Read-only view of auto-reply settings from JMAP VacationResponse/get (singleton). Requires new capability constant `CapVacationResponse = "urn:ietf:params:jmap:vacationresponse"` in `internal/jmap/session.go`.
 
 ```
 Status:    Enabled
@@ -316,6 +320,8 @@ Two JMAP calls: Thread/get for emailIds, then Email/get for summaries.
 
 ## MCP Tool Parity
 
+**Note:** Tools in `mcp/tools_mail.go` are registered via `RegisterMailTools()`, but `cli/mcp.go` currently only wires mail + masked-email tools via separate inline functions. Contact and calendar tools are **defined but not wired** into the CLI's MCP server. Phase 3/5 must also fix this wiring.
+
 | CLI Command | MCP Tool | MCP Resource | Status |
 |---|---|---|---|
 | `mail show` | `mail_get` | `fastmail://mail/{id}` | exists |
@@ -327,12 +333,15 @@ Two JMAP calls: Thread/get for emailIds, then Email/get for summaries.
 | `mailbox create` | `mailbox_create` | — | **new** |
 | `mailbox rename` | `mailbox_rename` | — | **new** |
 | `mailbox delete` | `mailbox_delete` | — | **new** |
-| `calendar list` | `calendar_events` | `fastmail://calendar/today` | exists |
+| `calendar list` | `calendar_events` | `fastmail://calendar/today` | defined, not wired |
 | `calendar show` | `calendar_get` | — | **new** |
-| `calendar create` | `calendar_create` | — | exists |
+| `calendar create` | `calendar_create` | — | defined, not wired |
 | `calendar update` | `calendar_update` | — | **new** |
 | `calendar delete` | `calendar_delete` | — | **new** |
 | `calendar calendars` | `calendar_list` | `fastmail://calendars` | **new** |
+| `contacts list` | `contacts_list` | — | defined, not wired |
+| `contacts show` | `contacts_get` | — | defined, not wired |
+| `contacts create` | `contacts_create` | — | defined, not wired |
 | `contacts update` | `contacts_update` | — | **new** |
 | `contacts delete` | `contacts_delete` | — | **new** |
 | `identity list` | `identity_list` | `fastmail://identities` | **new** |
@@ -340,7 +349,7 @@ Two JMAP calls: Thread/get for emailIds, then Email/get for summaries.
 | `vacation set` | `vacation_set` | — | **new** |
 | `thread show` | `thread_get` | — | **new** |
 
-13 new MCP tools, 4 new MCP resources.
+15 new MCP tools, 5 tools to wire into CLI MCP server, 4 new MCP resources.
 
 ---
 
@@ -357,23 +366,24 @@ Two JMAP calls: Thread/get for emailIds, then Email/get for summaries.
 
 ### Additions to Existing Services
 
-| Service | New Methods |
-|---|---|
-| `MailService` | `GetRaw(ctx, id) (io.Reader, error)`, `SetKeywords(ctx, id, keywords)` |
-| `Client` | `Mailbox()`, `Identity()`, `Vacation()`, `Thread()` accessors |
+| Service | New Methods | Notes |
+|---|---|---|
+| `MailService` | `GetFull(ctx, id)`, `GetRaw(ctx, id) (io.Reader, error)`, `SetKeywords(ctx, id, keywords)` | `GetFull` adds from/to/cc/bcc/body properties; `SetKeywords` uses existing `EmailSetBuilder.Update()` |
+| `MailService` | `SearchWithFilter(ctx, filter, limit)` or refactor `Search()` | Current `Search()` only does free-text; needs structured `FilterCondition` support |
+| `Client` | `Mailbox()`, `Identity()`, `Vacation()`, `Thread()` accessors | Calendar/Contacts remain separate DAV clients (see `cli/contacts.go` pattern) |
 
 ### JMAP Client Additions
 
-| Method | JMAP Call |
-|---|---|
-| `DownloadBlob(ctx, blobId)` | HTTP GET on `downloadUrl` template |
-| `MailboxGet(ctx, ids)` | `Mailbox/get` |
-| `MailboxSet(ctx, ...)` | `Mailbox/set` |
-| `IdentityGet(ctx)` | `Identity/get` |
-| `VacationGet(ctx)` | `VacationResponse/get` |
-| `VacationSet(ctx, ...)` | `VacationResponse/set` |
-| `ThreadGet(ctx, ids)` | `Thread/get` |
-| `EmailSet` for keywords | `Email/set` with keyword patches |
+| Method | JMAP Call | Notes |
+|---|---|---|
+| `DownloadBlob(ctx, blobId)` | HTTP GET on `downloadUrl` template | Truly new — uses session's `downloadUrl` |
+| `MailboxGet(ctx, ids)` | `Mailbox/get` | Builder exists in `internal/jmap/mailbox.go`; needs service integration only |
+| `MailboxSet(ctx, ...)` | `Mailbox/set` | New builder needed (follow `EmailSetBuilder` pattern) |
+| `IdentityGet(ctx)` | `Identity/get` | Builder exists in `internal/jmap/submission.go`; needs service integration only |
+| `VacationGet(ctx)` | `VacationResponse/get` | New types + builder needed; requires new `CapVacationResponse` constant |
+| `VacationSet(ctx, ...)` | `VacationResponse/set` | New builder needed |
+| `ThreadGet(ctx, ids)` | `Thread/get` | New types + builder needed |
+| `EmailSet` for keywords | `Email/set` with keyword patches | `EmailSetBuilder` exists and supports `Update()`; just needs service wrapper |
 
 ---
 
@@ -381,11 +391,11 @@ Two JMAP calls: Thread/get for emailIds, then Email/get for summaries.
 
 ### Phase 1 — Mailbox + Mail Read (highest value)
 
-1. `internal/jmap/mailbox.go` — Mailbox types, get/set builders
+1. `internal/jmap/mailbox.go` — `MailboxSetBuilder` (get builder already exists)
 2. `pkg/fastmail/mailbox_service.go` — MailboxService
 3. `cli/mailbox.go` + `mcp/mailbox_tools.go` — CLI + MCP
-4. `mail show` — GetRaw, blob download, display formatting
-5. `mail search` — CLI wrapper around existing service method
+4. `mail show` — `GetFull` (expanded properties), `GetRaw` (blob download), display formatting
+5. `mail search` — Query parser + `SearchWithFilter` or `Search()` refactor
 
 ### Phase 2 — Mail Write Operations
 
@@ -395,14 +405,14 @@ Two JMAP calls: Thread/get for emailIds, then Email/get for summaries.
 
 ### Phase 3 — Calendar CLI
 
-9. `cli/calendar.go` — All 6 calendar subcommands
-10. `mcp/calendar_tools.go` — New + updated MCP tools
+9. `cli/calendar.go` — All 6 calendar subcommands (create DAV client following `cli/contacts.go` pattern)
+10. `mcp/calendar_tools.go` — New + updated MCP tools; wire contact + calendar tools into `cli/mcp.go`
 
 ### Phase 4 — Identity, Vacation, Thread
 
-11. Identity service + CLI + MCP
-12. Vacation service + CLI + MCP
-13. Thread service + CLI + MCP
+11. Fix `Identity.ReplyTo`/`BCC` types in `internal/jmap/submission.go`, then Identity service + CLI + MCP
+12. Add `CapVacationResponse` to `internal/jmap/session.go`, VacationResponse types + builder, then Vacation service + CLI + MCP
+13. Thread types + builder, then Thread service + CLI + MCP
 
 ### Phase 5 — MCP Catch-up
 
