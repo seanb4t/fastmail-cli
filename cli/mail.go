@@ -12,6 +12,7 @@ import (
 
 	"github.com/seanb4t/fastmail-cli/internal/auth"
 	"github.com/seanb4t/fastmail-cli/internal/config"
+	"github.com/seanb4t/fastmail-cli/internal/search"
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
 
@@ -24,6 +25,7 @@ func newMailCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newMailListCommand())
+	cmd.AddCommand(newMailSearchCommand())
 	cmd.AddCommand(newMailShowCommand())
 	cmd.AddCommand(newMailSendCommand())
 	cmd.AddCommand(newMailReplyCommand())
@@ -63,6 +65,42 @@ func newMailListCommand() *cobra.Command {
 	cmd.Flags().Uint64VarP(&limit, "limit", "n", 10, "maximum emails to return")
 	cmd.Flags().StringVarP(&folder, "folder", "f", "Inbox", "mailbox folder name")
 
+	return cmd
+}
+
+// newMailSearchCommand creates the mail search command.
+func newMailSearchCommand() *cobra.Command {
+	var limit uint64
+
+	cmd := &cobra.Command{
+		Use:   "search QUERY...",
+		Short: "Search emails",
+		Long:  "Search emails using query syntax (e.g., 'from:alice subject:meeting').",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			query := strings.Join(args, " ")
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			filter := search.Parse(query)
+			emails, err := client.Mail().SearchWithFilter(ctx, filter, limit)
+			if err != nil {
+				return fmt.Errorf("searching emails: %w", err)
+			}
+
+			return outputEmails(cmd, emails)
+		},
+	}
+
+	cmd.Flags().Uint64VarP(&limit, "limit", "n", 25, "maximum results to return")
 	return cmd
 }
 
