@@ -46,6 +46,13 @@ func (c *Client) Mail() *MailService {
 	}
 }
 
+// Mailbox returns the mailbox service for folder operations.
+func (c *Client) Mailbox() *MailboxService {
+	return &MailboxService{
+		client: c,
+	}
+}
+
 // MaskedEmail returns the masked email service for masked email operations.
 func (c *Client) MaskedEmail() *MaskedEmailService {
 	return &MaskedEmailService{
