@@ -28,6 +28,7 @@ type CalendarAdapter struct {
 // RegisterMailTools registers all mail-related tools on the server.
 func RegisterMailTools(s *Server, cfg ToolsConfig) {
 	registerMailTools(s, cfg)
+	registerMailboxTools(s, cfg)
 	registerMaskedEmailTools(s, cfg)
 	registerContactTools(s, cfg)
 	registerCalendarTools(s, cfg)
