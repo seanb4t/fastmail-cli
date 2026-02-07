@@ -174,8 +174,8 @@ type Identity struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
 	Email         string `json:"email"`
-	ReplyTo       string `json:"replyTo,omitempty"`
-	BCC           string `json:"bcc,omitempty"`
+	ReplyTo       []EmailAddress `json:"replyTo,omitempty"`
+	BCC           []EmailAddress `json:"bcc,omitempty"`
 	TextSignature string `json:"textSignature,omitempty"`
 	HTMLSignature string `json:"htmlSignature,omitempty"`
 	MayDelete     bool   `json:"mayDelete"`
