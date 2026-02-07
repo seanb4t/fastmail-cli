@@ -501,6 +501,25 @@ func registerContactTools(s *Server, cfg ToolsConfig) {
 			WithRequired("name"),
 		makeContactsCreateHandler(cfg),
 	)
+
+	// contacts_update - Update an existing contact
+	s.RegisterTool(
+		NewTool("contacts_update", "Update an existing contact").
+			WithProperty("id", "string", "Contact ID").
+			WithProperty("name", "string", "Full name").
+			WithProperty("email", "string", "Email address").
+			WithProperty("phone", "string", "Phone number").
+			WithRequired("id"),
+		makeContactsUpdateHandler(cfg),
+	)
+
+	// contacts_delete - Delete a contact
+	s.RegisterTool(
+		NewTool("contacts_delete", "Delete a contact").
+			WithProperty("id", "string", "Contact ID").
+			WithRequired("id"),
+		makeContactsDeleteHandler(cfg),
+	)
 }
 
 func makeContactsListHandler(cfg ToolsConfig) ToolHandler {
@@ -580,6 +599,73 @@ func makeContactsCreateHandler(cfg ToolsConfig) ToolHandler {
 			"phone":  contact.Phone,
 			"status": "created",
 		}, nil
+	}
+}
+
+func makeContactsUpdateHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		if cfg.Contacts == nil {
+			return nil, oops.Errorf("contacts client not configured")
+		}
+
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		// Fetch existing contact to merge updates
+		existing, err := cfg.Contacts.Get(ctx, id)
+		if err != nil {
+			return nil, oops.Wrapf(err, "getting contact for update")
+		}
+
+		// Apply provided fields
+		if name, ok := args["name"]; ok {
+			if s, ok := name.(string); ok {
+				existing.Name = s
+			}
+		}
+		if email, ok := args["email"]; ok {
+			if s, ok := email.(string); ok {
+				existing.Email = s
+			}
+		}
+		if phone, ok := args["phone"]; ok {
+			if s, ok := phone.(string); ok {
+				existing.Phone = s
+			}
+		}
+
+		if err := cfg.Contacts.Update(ctx, existing); err != nil {
+			return nil, oops.Wrapf(err, "updating contact")
+		}
+
+		return map[string]any{
+			"id":     existing.ID,
+			"name":   existing.Name,
+			"email":  existing.Email,
+			"phone":  existing.Phone,
+			"status": "updated",
+		}, nil
+	}
+}
+
+func makeContactsDeleteHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		if cfg.Contacts == nil {
+			return nil, oops.Errorf("contacts client not configured")
+		}
+
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		if err := cfg.Contacts.Delete(ctx, id); err != nil {
+			return nil, oops.Wrapf(err, "deleting contact")
+		}
+
+		return map[string]any{"id": id, "status": "deleted"}, nil
 	}
 }
 

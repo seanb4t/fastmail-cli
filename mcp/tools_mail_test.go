@@ -33,6 +33,8 @@ func TestRegisterMailTools(t *testing.T) {
 		"contacts_list",
 		"contacts_get",
 		"contacts_create",
+		"contacts_update",
+		"contacts_delete",
 		"calendar_events",
 		"calendar_create",
 		"calendar_get",
@@ -178,6 +180,64 @@ func TestContactTools(t *testing.T) {
 	if _, ok := server.tools["contacts_create"]; !ok {
 		t.Error("contacts_create tool not found")
 	}
+	if _, ok := server.tools["contacts_update"]; !ok {
+		t.Error("contacts_update tool not found")
+	}
+	if _, ok := server.tools["contacts_delete"]; !ok {
+		t.Error("contacts_delete tool not found")
+	}
+
+	// Verify contacts_update requires id
+	rt := server.tools["contacts_update"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("contacts_update: expected 'id' to be required")
+	}
+
+	// Verify contacts_delete requires id
+	rt = server.tools["contacts_delete"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("contacts_delete: expected 'id' to be required")
+	}
+}
+
+func TestContactsUpdateHandler(t *testing.T) {
+	t.Run("nil contacts returns error", func(t *testing.T) {
+		handler := makeContactsUpdateHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "contact-1"})
+		if err == nil {
+			t.Error("expected error for nil contacts")
+		}
+	})
+
+	t.Run("empty id returns error", func(t *testing.T) {
+		handler := makeContactsUpdateHandler(ToolsConfig{
+			Contacts: fastmail.NewContactsClient("http://localhost", "user", "pass"),
+		})
+		_, err := handler(t.Context(), map[string]any{})
+		if err == nil {
+			t.Error("expected error for empty id")
+		}
+	})
+}
+
+func TestContactsDeleteHandler(t *testing.T) {
+	t.Run("nil contacts returns error", func(t *testing.T) {
+		handler := makeContactsDeleteHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "contact-1"})
+		if err == nil {
+			t.Error("expected error for nil contacts")
+		}
+	})
+
+	t.Run("empty id returns error", func(t *testing.T) {
+		handler := makeContactsDeleteHandler(ToolsConfig{
+			Contacts: fastmail.NewContactsClient("http://localhost", "user", "pass"),
+		})
+		_, err := handler(t.Context(), map[string]any{})
+		if err == nil {
+			t.Error("expected error for empty id")
+		}
+	})
 }
 
 func TestCalendarTools(t *testing.T) {
