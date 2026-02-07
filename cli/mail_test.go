@@ -21,7 +21,7 @@ func TestMailHelp_ShowsSubcommands(t *testing.T) {
 	output := buf.String()
 
 	// Should show all subcommands
-	subcommands := []string{"list", "search", "show", "send", "reply"}
+	subcommands := []string{"list", "search", "show", "send", "reply", "move", "delete"}
 	for _, sub := range subcommands {
 		if !strings.Contains(output, sub) {
 			t.Errorf("expected %q subcommand in help, got: %q", sub, output)
@@ -232,5 +232,61 @@ func TestParseAddresses_MultipleAddresses(t *testing.T) {
 	}
 	if addrs[1].Name != "Bob" {
 		t.Errorf("expected second name 'Bob', got %q", addrs[1].Name)
+	}
+}
+
+func TestMailMove_RequiresIDArg(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "move", "--folder", "Archive"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail move without ID should error")
+	}
+}
+
+func TestMailMove_RequiresFolder(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "move", "email-123"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail move without --folder should error")
+	}
+}
+
+func TestMailDelete_RequiresIDArg(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "delete", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail delete without ID should error")
+	}
+}
+
+func TestMailDelete_RequiresForce(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "delete", "email-123"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail delete without --force should error")
+	}
+
+	if !strings.Contains(err.Error(), "force") {
+		t.Errorf("expected 'force' in error, got: %v", err)
 	}
 }

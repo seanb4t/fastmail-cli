@@ -29,6 +29,8 @@ func newMailCommand() *cobra.Command {
 	cmd.AddCommand(newMailShowCommand())
 	cmd.AddCommand(newMailSendCommand())
 	cmd.AddCommand(newMailReplyCommand())
+	cmd.AddCommand(newMailMoveCommand())
+	cmd.AddCommand(newMailDeleteCommand())
 
 	return cmd
 }
@@ -375,6 +377,115 @@ func outputEmails(cmd *cobra.Command, emails []fastmail.Email) error {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s%s\n", e.ID, e.Subject, status)
 	}
 
+	return nil
+}
+
+// newMailMoveCommand creates the mail move command.
+func newMailMoveCommand() *cobra.Command {
+	var folder string
+
+	cmd := &cobra.Command{
+		Use:   "move EMAIL_ID",
+		Short: "Move an email to a folder",
+		Long:  "Move an email to a different mailbox folder.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().Move(ctx, emailID, folder); err != nil {
+				return fmt.Errorf("moving email: %w", err)
+			}
+
+			return outputMoveResult(cmd, emailID, folder)
+		},
+	}
+
+	cmd.Flags().StringVarP(&folder, "folder", "f", "", "destination folder name")
+	_ = cmd.MarkFlagRequired("folder")
+
+	return cmd
+}
+
+// newMailDeleteCommand creates the mail delete command.
+func newMailDeleteCommand() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete EMAIL_ID",
+		Short: "Delete an email",
+		Long:  "Delete an email. Requires --force to confirm.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			if !force {
+				return fmt.Errorf("use --force to confirm deletion")
+			}
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().Delete(ctx, emailID); err != nil {
+				return fmt.Errorf("deleting email: %w", err)
+			}
+
+			return outputDeleteResult(cmd, emailID)
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "confirm deletion")
+
+	return cmd
+}
+
+// outputMoveResult writes the move result to output.
+func outputMoveResult(cmd *cobra.Command, emailID, folder string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "folder": folder, "status": "moved"}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email moved to %s\n", folder)
+	return nil
+}
+
+// outputDeleteResult writes the delete result to output.
+func outputDeleteResult(cmd *cobra.Command, emailID string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "status": "deleted"}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email deleted: %s\n", emailID)
 	return nil
 }
 
