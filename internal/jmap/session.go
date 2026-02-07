@@ -5,10 +5,11 @@ import "encoding/json"
 
 // JMAP capability URIs.
 const (
-	CapCore     = "urn:ietf:params:jmap:core"
-	CapMail     = "urn:ietf:params:jmap:mail"
-	CapContacts = "urn:ietf:params:jmap:contacts"
-	CapCalendar = "urn:ietf:params:jmap:calendars"
+	CapCore             = "urn:ietf:params:jmap:core"
+	CapMail             = "urn:ietf:params:jmap:mail"
+	CapContacts         = "urn:ietf:params:jmap:contacts"
+	CapCalendar         = "urn:ietf:params:jmap:calendars"
+	CapVacationResponse = "urn:ietf:params:jmap:vacationresponse"
 )
 
 // Session represents a JMAP session resource.
