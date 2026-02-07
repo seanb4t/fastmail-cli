@@ -221,17 +221,20 @@ func (s *MailService) GetRaw(ctx context.Context, id string) (io.ReadCloser, err
 // Search returns emails matching a query string.
 // The query uses JMAP filter syntax (e.g., "from:alice subject:meeting").
 func (s *MailService) Search(ctx context.Context, query string, limit uint64) ([]Email, error) {
+	return s.SearchWithFilter(ctx, map[string]any{"text": query}, limit)
+}
+
+// SearchWithFilter returns emails matching a structured JMAP filter.
+// The filter is a pre-built JMAP FilterCondition map (e.g., {"from": "alice", "subject": "meeting"}).
+func (s *MailService) SearchWithFilter(ctx context.Context, filter map[string]any, limit uint64) ([]Email, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build query with text filter
 	queryArgs := map[string]any{
 		"accountId": accountID,
-		"filter": map[string]any{
-			"text": query,
-		},
+		"filter":    filter,
 		"sort": []jmap.Comparator{
 			{Property: "receivedAt", IsAscending: false},
 		},

@@ -431,6 +431,77 @@ func TestMailService_Search(t *testing.T) {
 	assert.Equal(t, "Meeting Notes", emails[0].Subject)
 }
 
+func TestMailService_SearchWithFilter(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		args := firstCall[1].(map[string]any)
+		filter := args["filter"].(map[string]any)
+
+		// Verify the structured filter is passed through directly
+		assert.Equal(t, "alice@example.com", filter["from"])
+		assert.Equal(t, "project update", filter["subject"])
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/query", {
+					"accountId": "acc1",
+					"queryState": "q1",
+					"canCalculateChanges": true,
+					"position": 0,
+					"ids": ["email-filtered"],
+					"total": 1
+				}, "0"],
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [
+						{
+							"id": "email-filtered",
+							"threadId": "t2",
+							"subject": "Project Update",
+							"preview": "Here is the latest update",
+							"receivedAt": "2024-02-01T14:00:00Z",
+							"size": 3000,
+							"keywords": {},
+							"mailboxIds": {"mb1": true}
+						}
+					],
+					"notFound": []
+				}, "1"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	filter := map[string]any{
+		"from":    "alice@example.com",
+		"subject": "project update",
+	}
+	emails, err := client.Mail().SearchWithFilter(ctx, filter, 5)
+	require.NoError(t, err)
+	require.Len(t, emails, 1)
+
+	assert.Equal(t, "email-filtered", emails[0].ID)
+	assert.Equal(t, "Project Update", emails[0].Subject)
+	assert.Equal(t, "t2", emails[0].ThreadID)
+}
+
 func TestMailService_Move(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
