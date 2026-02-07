@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"time"
@@ -34,6 +35,10 @@ func TestRegisterMailTools(t *testing.T) {
 		"contacts_create",
 		"calendar_events",
 		"calendar_create",
+		"calendar_get",
+		"calendar_update",
+		"calendar_delete",
+		"calendar_calendars",
 	}
 
 	for _, name := range expectedTools {
@@ -180,12 +185,209 @@ func TestCalendarTools(t *testing.T) {
 	RegisterMailTools(server, ToolsConfig{})
 
 	// Verify calendar tools
-	if _, ok := server.tools["calendar_events"]; !ok {
-		t.Error("calendar_events tool not found")
+	calendarTools := []string{
+		"calendar_events",
+		"calendar_create",
+		"calendar_get",
+		"calendar_update",
+		"calendar_delete",
+		"calendar_calendars",
 	}
-	if _, ok := server.tools["calendar_create"]; !ok {
-		t.Error("calendar_create tool not found")
+	for _, name := range calendarTools {
+		if _, ok := server.tools[name]; !ok {
+			t.Errorf("%s tool not found", name)
+		}
 	}
+
+	// Verify calendar_get requires id
+	rt := server.tools["calendar_get"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("calendar_get: expected 'id' to be required")
+	}
+
+	// Verify calendar_update requires id
+	rt = server.tools["calendar_update"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("calendar_update: expected 'id' to be required")
+	}
+
+	// Verify calendar_delete requires id
+	rt = server.tools["calendar_delete"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("calendar_delete: expected 'id' to be required")
+	}
+}
+
+func TestCalendarGetHandler(t *testing.T) {
+	t.Run("nil calendar returns error", func(t *testing.T) {
+		handler := makeCalendarGetHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err == nil {
+			t.Error("expected error for nil calendar")
+		}
+	})
+
+	t.Run("empty id returns error", func(t *testing.T) {
+		handler := makeCalendarGetHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				GetEventFunc: func(_ context.Context, _ string) (*fastmail.Event, error) {
+					return &fastmail.Event{}, nil
+				},
+			},
+		})
+		_, err := handler(t.Context(), map[string]any{})
+		if err == nil {
+			t.Error("expected error for empty id")
+		}
+	})
+
+	t.Run("returns event", func(t *testing.T) {
+		now := time.Now()
+		handler := makeCalendarGetHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				GetEventFunc: func(_ context.Context, id string) (*fastmail.Event, error) {
+					return &fastmail.Event{
+						ID:      id,
+						Summary: "Test Event",
+						Start:   now,
+						End:     now.Add(time.Hour),
+					}, nil
+				},
+			},
+		})
+		result, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		evt, ok := result.(*Event)
+		if !ok {
+			t.Fatalf("expected *Event, got %T", result)
+		}
+		if evt.ID != "evt-1" {
+			t.Errorf("expected ID 'evt-1', got %q", evt.ID)
+		}
+	})
+}
+
+func TestCalendarDeleteHandler(t *testing.T) {
+	t.Run("nil calendar returns error", func(t *testing.T) {
+		handler := makeCalendarDeleteHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err == nil {
+			t.Error("expected error for nil calendar")
+		}
+	})
+
+	t.Run("deletes event", func(t *testing.T) {
+		deletedID := ""
+		handler := makeCalendarDeleteHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				DeleteEventFunc: func(_ context.Context, id string) error {
+					deletedID = id
+					return nil
+				},
+			},
+		})
+		result, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if deletedID != "evt-1" {
+			t.Errorf("expected delete of 'evt-1', got %q", deletedID)
+		}
+		m, ok := result.(map[string]any)
+		if !ok {
+			t.Fatalf("expected map, got %T", result)
+		}
+		if m["status"] != "deleted" {
+			t.Errorf("expected status 'deleted', got %v", m["status"])
+		}
+	})
+}
+
+func TestCalendarUpdateHandler(t *testing.T) {
+	t.Run("nil calendar returns error", func(t *testing.T) {
+		handler := makeCalendarUpdateHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err == nil {
+			t.Error("expected error for nil calendar")
+		}
+	})
+
+	t.Run("updates event fields", func(t *testing.T) {
+		now := time.Now()
+		var updatedEvent *fastmail.Event
+		handler := makeCalendarUpdateHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				GetEventFunc: func(_ context.Context, id string) (*fastmail.Event, error) {
+					return &fastmail.Event{
+						ID:      id,
+						Summary: "Original",
+						Start:   now,
+						End:     now.Add(time.Hour),
+					}, nil
+				},
+				UpdateEventFunc: func(_ context.Context, event *fastmail.Event) error {
+					updatedEvent = event
+					return nil
+				},
+			},
+		})
+		result, err := handler(t.Context(), map[string]any{
+			"id":      "evt-1",
+			"summary": "Updated Title",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if updatedEvent == nil {
+			t.Fatal("UpdateEventFunc was not called")
+		}
+		if updatedEvent.Summary != "Updated Title" {
+			t.Errorf("expected summary 'Updated Title', got %q", updatedEvent.Summary)
+		}
+		m, ok := result.(map[string]any)
+		if !ok {
+			t.Fatalf("expected map, got %T", result)
+		}
+		if m["status"] != "updated" {
+			t.Errorf("expected status 'updated', got %v", m["status"])
+		}
+	})
+}
+
+func TestCalendarCalendarsHandler(t *testing.T) {
+	t.Run("nil calendar returns error", func(t *testing.T) {
+		handler := makeCalendarCalendarsHandler(ToolsConfig{})
+		_, err := handler(t.Context(), nil)
+		if err == nil {
+			t.Error("expected error for nil calendar")
+		}
+	})
+
+	t.Run("returns calendars", func(t *testing.T) {
+		handler := makeCalendarCalendarsHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				ListCalendarsFunc: func(_ context.Context) ([]fastmail.Calendar, error) {
+					return []fastmail.Calendar{
+						{ID: "cal-1", Name: "Personal"},
+						{ID: "cal-2", Name: "Work"},
+					}, nil
+				},
+			},
+		})
+		result, err := handler(t.Context(), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		cals, ok := result.([]fastmail.Calendar)
+		if !ok {
+			t.Fatalf("expected []fastmail.Calendar, got %T", result)
+		}
+		if len(cals) != 2 {
+			t.Errorf("expected 2 calendars, got %d", len(cals))
+		}
+	})
 }
 
 func TestHelperFunctions(t *testing.T) {
