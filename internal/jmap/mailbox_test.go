@@ -83,6 +83,58 @@ func TestMailboxGetResponse_Decode(t *testing.T) {
 	assert.Equal(t, "sent", sent.Role)
 }
 
+func TestMailboxSetBuilder_Create(t *testing.T) {
+	args := NewMailboxSet("account-1").
+		Create("mb1", map[string]any{"name": "Projects", "parentId": nil}).
+		Build()
+
+	assert.Equal(t, "account-1", args["accountId"])
+	create := args["create"].(map[string]map[string]any)
+	assert.Equal(t, "Projects", create["mb1"]["name"])
+}
+
+func TestMailboxSetBuilder_Update(t *testing.T) {
+	args := NewMailboxSet("account-1").
+		Update("mb-123", map[string]any{"name": "Renamed"}).
+		Build()
+
+	assert.Equal(t, "account-1", args["accountId"])
+	update := args["update"].(map[string]map[string]any)
+	assert.Equal(t, "Renamed", update["mb-123"]["name"])
+}
+
+func TestMailboxSetBuilder_Destroy(t *testing.T) {
+	args := NewMailboxSet("account-1").
+		Destroy("mb-123", "mb-456").
+		Build()
+
+	assert.Equal(t, []string{"mb-123", "mb-456"}, args["destroy"])
+}
+
+func TestMailboxSetResponse_Decode(t *testing.T) {
+	responseJSON := `{
+		"accountId": "A1",
+		"oldState": "s1",
+		"newState": "s2",
+		"created": {"mb1": {"id": "Mab999"}},
+		"updated": {"mb-123": null},
+		"destroyed": ["mb-456"],
+		"notCreated": {},
+		"notUpdated": {},
+		"notDestroyed": {}
+	}`
+
+	var resp MailboxSetResponse
+	err := json.Unmarshal([]byte(responseJSON), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "A1", resp.AccountID)
+	assert.Equal(t, "s2", resp.NewState)
+	require.Contains(t, resp.Created, "mb1")
+	assert.Equal(t, "Mab999", resp.Created["mb1"].ID)
+	assert.Equal(t, []string{"mb-456"}, resp.Destroyed)
+}
+
 func TestMailbox_SpecialRoles(t *testing.T) {
 	mailboxes := []Mailbox{
 		{ID: "mb-1", Role: "inbox"},
