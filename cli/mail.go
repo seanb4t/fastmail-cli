@@ -31,6 +31,7 @@ func newMailCommand() *cobra.Command {
 	cmd.AddCommand(newMailReplyCommand())
 	cmd.AddCommand(newMailMoveCommand())
 	cmd.AddCommand(newMailDeleteCommand())
+	cmd.AddCommand(newMailFlagCommand())
 
 	return cmd
 }
@@ -486,6 +487,79 @@ func outputDeleteResult(cmd *cobra.Command, emailID string) error {
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email deleted: %s\n", emailID)
+	return nil
+}
+
+// newMailFlagCommand creates the mail flag command.
+func newMailFlagCommand() *cobra.Command {
+	var read, unread, flagged, unflagged bool
+
+	cmd := &cobra.Command{
+		Use:   "flag EMAIL_ID",
+		Short: "Set email flags",
+		Long:  "Set or remove email flags (read, flagged).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			if !read && !unread && !flagged && !unflagged {
+				return fmt.Errorf("at least one flag is required (--read, --unread, --flagged, --unflagged)")
+			}
+
+			keywords := make(map[string]bool)
+			if read {
+				keywords["$seen"] = true
+			}
+			if unread {
+				keywords["$seen"] = false
+			}
+			if flagged {
+				keywords["$flagged"] = true
+			}
+			if unflagged {
+				keywords["$flagged"] = false
+			}
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().SetKeywords(ctx, emailID, keywords); err != nil {
+				return fmt.Errorf("setting flags: %w", err)
+			}
+
+			return outputFlagResult(cmd, emailID)
+		},
+	}
+
+	cmd.Flags().BoolVar(&read, "read", false, "mark as read")
+	cmd.Flags().BoolVar(&unread, "unread", false, "mark as unread")
+	cmd.Flags().BoolVar(&flagged, "flagged", false, "mark as flagged")
+	cmd.Flags().BoolVar(&unflagged, "unflagged", false, "remove flagged")
+
+	return cmd
+}
+
+// outputFlagResult writes the flag result to output.
+func outputFlagResult(cmd *cobra.Command, emailID string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "status": "updated"}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email flags updated: %s\n", emailID)
 	return nil
 }
 

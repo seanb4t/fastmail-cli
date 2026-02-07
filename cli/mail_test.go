@@ -21,7 +21,7 @@ func TestMailHelp_ShowsSubcommands(t *testing.T) {
 	output := buf.String()
 
 	// Should show all subcommands
-	subcommands := []string{"list", "search", "show", "send", "reply", "move", "delete"}
+	subcommands := []string{"list", "search", "show", "send", "reply", "move", "delete", "flag"}
 	for _, sub := range subcommands {
 		if !strings.Contains(output, sub) {
 			t.Errorf("expected %q subcommand in help, got: %q", sub, output)
@@ -271,6 +271,36 @@ func TestMailDelete_RequiresIDArg(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("mail delete without ID should error")
+	}
+}
+
+func TestMailFlag_RequiresIDArg(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag without ID should error")
+	}
+}
+
+func TestMailFlag_RequiresAtLeastOneFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag", "email-123"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag without any flags should error")
+	}
+
+	if !strings.Contains(err.Error(), "at least one flag") {
+		t.Errorf("expected 'at least one flag' in error, got: %v", err)
 	}
 }
 

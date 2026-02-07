@@ -420,6 +420,53 @@ func (s *MailService) destroy(ctx context.Context, accountID, id string) error {
 	return nil
 }
 
+// SetKeywords sets or removes keywords on an email.
+// Keywords follow JMAP convention: "$seen" for read, "$flagged" for flagged.
+func (s *MailService) SetKeywords(ctx context.Context, id string, keywords map[string]bool) error {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Build patch map for JMAP Email/set update
+	// JMAP uses "keywords/$seen" as key with value true/false
+	patch := make(map[string]any, len(keywords))
+	for keyword, value := range keywords {
+		patch["keywords/"+keyword] = value
+	}
+
+	setBuilder := jmap.NewEmailSet(accountID).Update(id, patch)
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	callID := req.Invoke("Email/set", setBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return oops.Errorf("set failed: %s", result.Error())
+	}
+
+	// Check for update errors
+	var setResp struct {
+		NotUpdated map[string]jmap.MethodError `json:"notUpdated"`
+	}
+	if err := result.Decode(&setResp); err != nil {
+		return oops.Wrapf(err, "decoding response")
+	}
+
+	if errInfo, ok := setResp.NotUpdated[id]; ok {
+		return oops.Errorf("failed to set keywords: %s", errInfo.Error())
+	}
+
+	return nil
+}
+
 // resolveMailbox converts a folder name to a mailbox ID.
 // If the input looks like an ID (contains no common folder names), it's returned as-is.
 func (s *MailService) resolveMailbox(ctx context.Context, accountID, folder string) (string, error) {

@@ -1088,6 +1088,95 @@ func TestMailService_Reply(t *testing.T) {
 	assert.Equal(t, "reply-email-456", replyID)
 }
 
+func TestMailService_SetKeywords(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		require.Equal(t, testMethodEmailSet, methodName)
+
+		// Verify the update payload contains keyword patches
+		args := firstCall[1].(map[string]any)
+		update := args["update"].(map[string]any)
+		emailUpdate := update["email-flag-test"].(map[string]any)
+
+		assert.Equal(t, true, emailUpdate["keywords/$seen"])
+		assert.Equal(t, true, emailUpdate["keywords/$flagged"])
+
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/set", {
+					"accountId": "acc1",
+					"oldState": "e1",
+					"newState": "e2",
+					"updated": {"email-flag-test": null}
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	keywords := map[string]bool{
+		"$seen":    true,
+		"$flagged": true,
+	}
+	err := client.Mail().SetKeywords(ctx, "email-flag-test", keywords)
+	require.NoError(t, err)
+}
+
+func TestMailService_SetKeywords_NotUpdated(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/set", {
+					"accountId": "acc1",
+					"oldState": "e1",
+					"newState": "e1",
+					"notUpdated": {
+						"bad-id": {
+							"type": "notFound",
+							"description": "email not found"
+						}
+					}
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	err := client.Mail().SetKeywords(ctx, "bad-id", map[string]bool{"$seen": true})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to set keywords")
+}
+
 func TestMailService_GetRaw(t *testing.T) {
 	rawContent := "From: alice@example.com\r\nSubject: Test\r\n\r\nHello"
 

@@ -92,6 +92,18 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 		makeMailMoveHandler(cfg),
 	)
 
+	// mail_flag - Set email flags
+	s.RegisterTool(
+		NewTool("mail_flag", "Set or remove email flags (read, flagged)").
+			WithProperty("id", "string", "The email ID").
+			WithProperty("read", "boolean", "Mark as read").
+			WithProperty("unread", "boolean", "Mark as unread").
+			WithProperty("flagged", "boolean", "Mark as flagged").
+			WithProperty("unflagged", "boolean", "Remove flagged").
+			WithRequired("id"),
+		makeMailFlagHandler(cfg),
+	)
+
 	// mail_delete - Delete email
 	s.RegisterTool(
 		NewTool("mail_delete", "Delete an email (moves to Trash, or permanently deletes if already in Trash)").
@@ -234,6 +246,42 @@ func makeMailMoveHandler(cfg ToolsConfig) ToolHandler {
 			"id":     id,
 			"folder": folder,
 			"status": "moved",
+		}, nil
+	}
+}
+
+func makeMailFlagHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		keywords := make(map[string]bool)
+		if getBoolArg(args, "read", false) {
+			keywords["$seen"] = true
+		}
+		if getBoolArg(args, "unread", false) {
+			keywords["$seen"] = false
+		}
+		if getBoolArg(args, "flagged", false) {
+			keywords["$flagged"] = true
+		}
+		if getBoolArg(args, "unflagged", false) {
+			keywords["$flagged"] = false
+		}
+
+		if len(keywords) == 0 {
+			return nil, oops.Errorf("at least one flag (read, unread, flagged, unflagged) is required")
+		}
+
+		if err := cfg.Client.Mail().SetKeywords(ctx, id, keywords); err != nil {
+			return nil, oops.Wrapf(err, "setting flags")
+		}
+
+		return map[string]any{
+			"id":     id,
+			"status": "updated",
 		}, nil
 	}
 }
