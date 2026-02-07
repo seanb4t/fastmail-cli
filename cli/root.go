@@ -50,6 +50,7 @@ func NewRootCommand() *RootCommand {
 	root.cmd.AddCommand(newCalendarCommand())
 	root.cmd.AddCommand(newIdentityCommand())
 	root.cmd.AddCommand(newVacationCommand())
+	root.cmd.AddCommand(newThreadCommand())
 	root.cmd.AddCommand(newExportCommand())
 	root.cmd.AddCommand(newMCPCommand())
 

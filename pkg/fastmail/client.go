@@ -72,6 +72,11 @@ func (c *Client) Vacation() *VacationService {
 	return &VacationService{client: c}
 }
 
+// Thread returns the thread service for conversation operations.
+func (c *Client) Thread() *ThreadService {
+	return &ThreadService{client: c}
+}
+
 // accountID returns the current account ID, fetching session if needed.
 func (c *Client) getAccountID(ctx context.Context) (string, error) {
 	if c.accountID != "" {
