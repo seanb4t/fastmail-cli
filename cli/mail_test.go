@@ -21,11 +21,49 @@ func TestMailHelp_ShowsSubcommands(t *testing.T) {
 	output := buf.String()
 
 	// Should show all subcommands
-	subcommands := []string{"list", "send", "reply"}
+	subcommands := []string{"list", "show", "send", "reply"}
 	for _, sub := range subcommands {
 		if !strings.Contains(output, sub) {
 			t.Errorf("expected %q subcommand in help, got: %q", sub, output)
 		}
+	}
+}
+
+func TestMailShow_RequiresIDArg(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "show"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail show without ID should error")
+	}
+
+	if !strings.Contains(err.Error(), "arg") {
+		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailShow_HelpShowsRawFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "show", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail show --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "--raw") {
+		t.Error("expected --raw flag in help output")
+	}
+	if !strings.Contains(output, "EMAIL_ID") {
+		t.Error("expected EMAIL_ID in usage")
 	}
 }
 

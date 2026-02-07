@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -23,6 +24,7 @@ func newMailCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newMailListCommand())
+	cmd.AddCommand(newMailShowCommand())
 	cmd.AddCommand(newMailSendCommand())
 	cmd.AddCommand(newMailReplyCommand())
 
@@ -175,6 +177,100 @@ func newMailReplyCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("body")
 
 	return cmd
+}
+
+// newMailShowCommand creates the mail show command.
+func newMailShowCommand() *cobra.Command {
+	var raw bool
+
+	cmd := &cobra.Command{
+		Use:   "show EMAIL_ID",
+		Short: "Show an email",
+		Long:  "Display a single email message by its ID.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if raw {
+				reader, err := client.Mail().GetRaw(ctx, emailID)
+				if err != nil {
+					return fmt.Errorf("getting raw email: %w", err)
+				}
+				defer func() { _ = reader.Close() }()
+
+				if _, err = io.Copy(cmd.OutOrStdout(), reader); err != nil {
+					return fmt.Errorf("writing raw email: %w", err)
+				}
+				return nil
+			}
+
+			email, err := client.Mail().GetFull(ctx, emailID)
+			if err != nil {
+				return fmt.Errorf("getting email: %w", err)
+			}
+
+			return outputEmailDetail(cmd, email)
+		},
+	}
+
+	cmd.Flags().BoolVar(&raw, "raw", false, "output raw RFC 5322 source")
+
+	return cmd
+}
+
+// outputEmailDetail writes a single email in formatted or JSON output.
+func outputEmailDetail(cmd *cobra.Command, email *fastmail.Email) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(email)
+	}
+
+	w := cmd.OutOrStdout()
+
+	_, _ = fmt.Fprintf(w, "From:    %s\n", email.From.String())
+	_, _ = fmt.Fprintf(w, "To:      %s\n", formatAddressList(email.To))
+	if len(email.Cc) > 0 {
+		_, _ = fmt.Fprintf(w, "Cc:      %s\n", formatAddressList(email.Cc))
+	}
+	if len(email.Bcc) > 0 {
+		_, _ = fmt.Fprintf(w, "Bcc:     %s\n", formatAddressList(email.Bcc))
+	}
+	_, _ = fmt.Fprintf(w, "Date:    %s\n", email.ReceivedAt.Format("2006-01-02 15:04"))
+	_, _ = fmt.Fprintf(w, "Subject: %s\n", email.Subject)
+	_, _ = fmt.Fprintf(w, "\n%s\n", email.Body)
+
+	if len(email.Attachments) > 0 {
+		_, _ = fmt.Fprintf(w, "\nAttachments:\n")
+		for _, a := range email.Attachments {
+			_, _ = fmt.Fprintf(w, "  - %s (%s, %d bytes)\n", a.Name, a.Type, a.Size)
+		}
+	}
+
+	return nil
+}
+
+// formatAddressList formats a slice of email addresses as a comma-separated string.
+func formatAddressList(addrs []fastmail.EmailAddress) string {
+	parts := make([]string, len(addrs))
+	for i, a := range addrs {
+		parts[i] = a.String()
+	}
+	return strings.Join(parts, ", ")
 }
 
 // createClient creates and configures a Fastmail client.
