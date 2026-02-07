@@ -171,14 +171,14 @@ type EmailSubmissionSetResponse struct {
 
 // Identity represents a JMAP Identity object (sender identity).
 type Identity struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Email         string `json:"email"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Email         string         `json:"email"`
 	ReplyTo       []EmailAddress `json:"replyTo,omitempty"`
 	BCC           []EmailAddress `json:"bcc,omitempty"`
-	TextSignature string `json:"textSignature,omitempty"`
-	HTMLSignature string `json:"htmlSignature,omitempty"`
-	MayDelete     bool   `json:"mayDelete"`
+	TextSignature string         `json:"textSignature,omitempty"`
+	HTMLSignature string         `json:"htmlSignature,omitempty"`
+	MayDelete     bool           `json:"mayDelete"`
 }
 
 // IdentityGetBuilder builds arguments for Identity/get.

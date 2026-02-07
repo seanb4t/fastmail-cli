@@ -34,6 +34,7 @@ func RegisterMailTools(s *Server, cfg ToolsConfig) {
 	registerMailTools(s, cfg)
 	registerMailboxTools(s, cfg)
 	registerMaskedEmailTools(s, cfg)
+	registerIdentityTools(s, cfg)
 	registerContactTools(s, cfg)
 	registerCalendarTools(s, cfg)
 }
@@ -368,6 +369,25 @@ func makeMaskedEmailCreateHandler(cfg ToolsConfig) ToolHandler {
 			"for_domain":  email.ForDomain,
 			"description": email.Description,
 		}, nil
+	}
+}
+
+// Identity tools
+
+func registerIdentityTools(s *Server, cfg ToolsConfig) {
+	s.RegisterTool(
+		NewTool("identity_list", "List all sender identities"),
+		makeIdentityListHandler(cfg),
+	)
+}
+
+func makeIdentityListHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, _ map[string]any) (any, error) {
+		identities, err := cfg.Client.Identity().List(ctx)
+		if err != nil {
+			return nil, oops.Wrapf(err, "listing identities")
+		}
+		return identities, nil
 	}
 }
 

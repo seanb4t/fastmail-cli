@@ -44,6 +44,8 @@ type CreateMaskedEmailOptions struct {
 }
 
 // List returns all masked emails.
+//
+//nolint:dupl // JMAP service List methods follow a shared call/decode pattern by design.
 func (s *MaskedEmailService) List(ctx context.Context) ([]MaskedEmail, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
