@@ -224,6 +224,148 @@ func TestMailService_Get_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+func TestMailService_GetFull(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		args := firstCall[1].(map[string]any)
+
+		// Verify fetchTextBodyValues is set
+		assert.Equal(t, true, args["fetchTextBodyValues"])
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [
+						{
+							"id": "email-full",
+							"blobId": "blob-full",
+							"threadId": "t1",
+							"subject": "Full Email",
+							"preview": "Preview text",
+							"receivedAt": "2024-01-15T10:30:00Z",
+							"size": 4096,
+							"keywords": {"$seen": true},
+							"mailboxIds": {"mb-inbox": true},
+							"from": [{"name": "Alice Smith", "email": "alice@example.com"}],
+							"to": [
+								{"name": "Bob Jones", "email": "bob@example.com"},
+								{"email": "carol@example.com"}
+							],
+							"cc": [{"name": "Dave", "email": "dave@example.com"}],
+							"bcc": [],
+							"bodyValues": {
+								"1": {"value": "Hello, this is the full body text."}
+							},
+							"textBody": [{"partId": "1", "type": "text/plain"}],
+							"htmlBody": [{"partId": "2", "type": "text/html"}],
+							"attachments": [
+								{
+									"blobId": "blob-att1",
+									"type": "application/pdf",
+									"name": "report.pdf",
+									"size": 12345
+								}
+							]
+						}
+					],
+					"notFound": []
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	email, err := client.Mail().GetFull(ctx, "email-full")
+	require.NoError(t, err)
+	require.NotNil(t, email)
+
+	assert.Equal(t, "email-full", email.ID)
+	assert.Equal(t, "t1", email.ThreadID)
+	assert.Equal(t, "Full Email", email.Subject)
+	assert.Equal(t, "Preview text", email.Preview)
+	assert.Equal(t, uint64(4096), email.Size)
+	assert.True(t, email.IsRead())
+
+	// From
+	assert.Equal(t, "Alice Smith", email.From.Name)
+	assert.Equal(t, "alice@example.com", email.From.Email)
+
+	// To
+	require.Len(t, email.To, 2)
+	assert.Equal(t, "Bob Jones", email.To[0].Name)
+	assert.Equal(t, "bob@example.com", email.To[0].Email)
+	assert.Equal(t, "", email.To[1].Name)
+	assert.Equal(t, "carol@example.com", email.To[1].Email)
+
+	// Cc
+	require.Len(t, email.Cc, 1)
+	assert.Equal(t, "Dave", email.Cc[0].Name)
+	assert.Equal(t, "dave@example.com", email.Cc[0].Email)
+
+	// Bcc (empty)
+	assert.Empty(t, email.Bcc)
+
+	// Body
+	assert.Equal(t, "Hello, this is the full body text.", email.Body)
+
+	// Attachments
+	require.Len(t, email.Attachments, 1)
+	assert.Equal(t, "report.pdf", email.Attachments[0].Name)
+	assert.Equal(t, "application/pdf", email.Attachments[0].Type)
+	assert.Equal(t, uint64(12345), email.Attachments[0].Size)
+	assert.Equal(t, "blob-att1", email.Attachments[0].BlobID)
+}
+
+func TestMailService_GetFull_NotFound(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [],
+					"notFound": ["nonexistent"]
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	email, err := client.Mail().GetFull(ctx, "nonexistent")
+	assert.Error(t, err)
+	assert.Nil(t, email)
+	assert.Contains(t, err.Error(), "not found")
+}
+
 func TestMailService_Search(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any

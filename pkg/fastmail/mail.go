@@ -124,6 +124,55 @@ func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 	return &emails[0], nil
 }
 
+// GetFull returns a single email with full display properties including
+// sender, recipients, body text, and attachments.
+func (s *MailService) GetFull(ctx context.Context, id string) (*Email, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	getBuilder := jmap.NewEmailGet(accountID).
+		IDs(id).
+		Properties("id", "blobId", "threadId", "subject", "preview", "receivedAt", "size",
+			"keywords", "mailboxIds", "from", "to", "cc", "bcc",
+			"bodyValues", "textBody", "htmlBody", "attachments")
+
+	args := getBuilder.Build()
+	args["fetchTextBodyValues"] = true
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	callID := req.Invoke("Email/get", args)
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return nil, oops.Errorf("get failed: %s", result.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := result.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding response")
+	}
+
+	if len(getResp.NotFound) > 0 {
+		return nil, oops.Errorf("email not found: %s", id)
+	}
+	if len(getResp.List) == 0 {
+		return nil, oops.Errorf("email not found: %s", id)
+	}
+
+	email := convertFullEmail(getResp.List[0])
+	return &email, nil
+}
+
 // Search returns emails matching a query string.
 // The query uses JMAP filter syntax (e.g., "from:alice subject:meeting").
 func (s *MailService) Search(ctx context.Context, query string, limit uint64) ([]Email, error) {
@@ -425,6 +474,56 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 		}
 	}
 	return emails
+}
+
+// convertFullEmail converts a JMAP email with full properties to a domain Email.
+func convertFullEmail(je jmap.Email) Email {
+	email := convertEmails([]jmap.Email{je})[0]
+
+	if len(je.From) > 0 {
+		email.From = EmailAddress{Name: je.From[0].Name, Email: je.From[0].Email}
+	}
+
+	email.To = convertJMAPAddressToDomain(je.To)
+	email.Cc = convertJMAPAddressToDomain(je.Cc)
+	email.Bcc = convertJMAPAddressToDomain(je.Bcc)
+
+	if len(je.TextBody) > 0 && len(je.BodyValues) > 0 {
+		partID := je.TextBody[0].PartID
+		if bodyValue, ok := je.BodyValues[partID]; ok {
+			email.Body = bodyValue.Value
+		}
+	}
+
+	email.Attachments = convertJMAPAttachments(je.Attachments)
+
+	return email
+}
+
+// convertJMAPAddressToDomain converts JMAP email addresses to domain addresses.
+func convertJMAPAddressToDomain(addrs []jmap.EmailAddress) []EmailAddress {
+	result := make([]EmailAddress, len(addrs))
+	for i, a := range addrs {
+		result[i] = EmailAddress{Name: a.Name, Email: a.Email}
+	}
+	return result
+}
+
+// convertJMAPAttachments converts JMAP attachments to domain attachments.
+func convertJMAPAttachments(jmapAttachments []jmap.Attachment) []Attachment {
+	if len(jmapAttachments) == 0 {
+		return nil
+	}
+	result := make([]Attachment, len(jmapAttachments))
+	for i, a := range jmapAttachments {
+		result[i] = Attachment{
+			Name:   a.Name,
+			Type:   a.Type,
+			Size:   a.Size,
+			BlobID: a.BlobID,
+		}
+	}
+	return result
 }
 
 // SendOptions specifies options for sending an email.
