@@ -2,6 +2,7 @@ package fastmail
 
 import (
 	"context"
+	"io"
 	"slices"
 	"strings"
 	"time"
@@ -171,6 +172,50 @@ func (s *MailService) GetFull(ctx context.Context, id string) (*Email, error) {
 
 	email := convertFullEmail(getResp.List[0])
 	return &email, nil
+}
+
+// GetRaw returns the raw RFC 5322 source of an email.
+func (s *MailService) GetRaw(ctx context.Context, id string) (io.ReadCloser, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	getBuilder := jmap.NewEmailGet(accountID).
+		IDs(id).
+		Properties("id", "blobId")
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	callID := req.Invoke("Email/get", getBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return nil, oops.Errorf("get failed: %s", result.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := result.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding response")
+	}
+
+	if len(getResp.NotFound) > 0 || len(getResp.List) == 0 {
+		return nil, oops.Errorf("email not found: %s", id)
+	}
+
+	blobID := getResp.List[0].BlobID
+	if blobID == "" {
+		return nil, oops.Errorf("email has no blob ID: %s", id)
+	}
+
+	return s.client.jmap.DownloadBlob(ctx, accountID, blobID)
 }
 
 // Search returns emails matching a query string.

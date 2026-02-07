@@ -3,6 +3,7 @@ package fastmail
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -1014,4 +1015,162 @@ func TestMailService_Reply(t *testing.T) {
 	replyID, err := client.Mail().Reply(ctx, opts)
 	require.NoError(t, err)
 	assert.Equal(t, "reply-email-456", replyID)
+}
+
+func TestMailService_GetRaw(t *testing.T) {
+	rawContent := "From: alice@example.com\r\nSubject: Test\r\n\r\nHello"
+
+	// Single server handles session, API, and blob download
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Session request
+		if r.Method == http.MethodGet && r.URL.Path == "/" {
+			_, _ = w.Write([]byte(`{
+				"capabilities": {
+					"urn:ietf:params:jmap:core": {},
+					"urn:ietf:params:jmap:mail": {}
+				},
+				"accounts": {
+					"acc1": {
+						"name": "test@example.com",
+						"isPersonal": true,
+						"isReadOnly": false,
+						"accountCapabilities": {"urn:ietf:params:jmap:mail": {}}
+					}
+				},
+				"primaryAccounts": {"urn:ietf:params:jmap:mail": "acc1"},
+				"username": "test@example.com",
+				"apiUrl": "http://` + r.Host + `/api",
+				"downloadUrl": "http://` + r.Host + `/download/{accountId}/{blobId}/{name}",
+				"uploadUrl": "http://` + r.Host + `/upload",
+				"eventSourceUrl": "http://` + r.Host + `/events",
+				"state": "s1"
+			}`))
+			return
+		}
+
+		// Blob download
+		if r.URL.Path == "/download/acc1/blob-raw-123/raw" {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write([]byte(rawContent))
+			return
+		}
+
+		// API request (Email/get)
+		resp := map[string]any{
+			"sessionState": "s1",
+			"methodResponses": []any{
+				[]any{"Email/get", map[string]any{
+					"accountId": "acc1",
+					"state":     "e1",
+					"list": []map[string]any{
+						{"id": "em1", "blobId": "blob-raw-123"},
+					},
+					"notFound": []string{},
+				}, "0"},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	require.NoError(t, client.Connect(context.Background()))
+
+	body, err := client.Mail().GetRaw(context.Background(), "em1")
+	require.NoError(t, err)
+	defer func() { _ = body.Close() }()
+
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.Equal(t, rawContent, string(data))
+}
+
+func TestMailService_GetRaw_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodGet && r.URL.Path == "/" {
+			_, _ = w.Write([]byte(`{
+				"capabilities": {"urn:ietf:params:jmap:core": {}, "urn:ietf:params:jmap:mail": {}},
+				"accounts": {"acc1": {"name": "test", "isPersonal": true, "isReadOnly": false, "accountCapabilities": {"urn:ietf:params:jmap:mail": {}}}},
+				"primaryAccounts": {"urn:ietf:params:jmap:mail": "acc1"},
+				"username": "test",
+				"apiUrl": "http://` + r.Host + `/api",
+				"downloadUrl": "http://` + r.Host + `/download/{accountId}/{blobId}/{name}",
+				"uploadUrl": "http://` + r.Host + `/upload",
+				"eventSourceUrl": "http://` + r.Host + `/events",
+				"state": "s1"
+			}`))
+			return
+		}
+
+		resp := map[string]any{
+			"sessionState": "s1",
+			"methodResponses": []any{
+				[]any{"Email/get", map[string]any{
+					"accountId": "acc1",
+					"state":     "e1",
+					"list":      []map[string]any{},
+					"notFound":  []string{"nonexistent"},
+				}, "0"},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	require.NoError(t, client.Connect(context.Background()))
+
+	body, err := client.Mail().GetRaw(context.Background(), "nonexistent")
+	assert.Error(t, err)
+	assert.Nil(t, body)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestMailService_GetRaw_NoBlobID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodGet && r.URL.Path == "/" {
+			_, _ = w.Write([]byte(`{
+				"capabilities": {"urn:ietf:params:jmap:core": {}, "urn:ietf:params:jmap:mail": {}},
+				"accounts": {"acc1": {"name": "test", "isPersonal": true, "isReadOnly": false, "accountCapabilities": {"urn:ietf:params:jmap:mail": {}}}},
+				"primaryAccounts": {"urn:ietf:params:jmap:mail": "acc1"},
+				"username": "test",
+				"apiUrl": "http://` + r.Host + `/api",
+				"downloadUrl": "http://` + r.Host + `/download/{accountId}/{blobId}/{name}",
+				"uploadUrl": "http://` + r.Host + `/upload",
+				"eventSourceUrl": "http://` + r.Host + `/events",
+				"state": "s1"
+			}`))
+			return
+		}
+
+		resp := map[string]any{
+			"sessionState": "s1",
+			"methodResponses": []any{
+				[]any{"Email/get", map[string]any{
+					"accountId": "acc1",
+					"state":     "e1",
+					"list": []map[string]any{
+						{"id": "em-no-blob", "blobId": ""},
+					},
+					"notFound": []string{},
+				}, "0"},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	require.NoError(t, client.Connect(context.Background()))
+
+	body, err := client.Mail().GetRaw(context.Background(), "em-no-blob")
+	assert.Error(t, err)
+	assert.Nil(t, body)
+	assert.Contains(t, err.Error(), "no blob ID")
 }

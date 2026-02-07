@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -146,4 +147,35 @@ func (c *Client) Call(ctx context.Context, request *Request) (*Response, error) 
 	}
 
 	return &response, nil
+}
+
+// DownloadBlob downloads a blob by ID using the session's download URL template.
+func (c *Client) DownloadBlob(ctx context.Context, accountID, blobID string) (io.ReadCloser, error) {
+	session, err := c.Session(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting session: %w", err)
+	}
+
+	url := session.DownloadURL
+	url = strings.ReplaceAll(url, "{accountId}", accountID)
+	url = strings.ReplaceAll(url, "{blobId}", blobID)
+	url = strings.ReplaceAll(url, "{name}", "raw")
+	url = strings.ReplaceAll(url, "{type}", "application/octet-stream")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("downloading blob: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: string(body)}
+	}
+	return resp.Body, nil
 }
