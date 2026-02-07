@@ -18,6 +18,7 @@ import (
 )
 
 const defaultCardDAVEndpoint = "https://carddav.fastmail.com/dav/"
+const defaultCalDAVEndpoint = "https://caldav.fastmail.com/dav/"
 
 // Config holds the application configuration.
 type Config struct {
@@ -35,6 +36,12 @@ type Config struct {
 
 	// CardDAVUsername is the username for CardDAV authentication.
 	CardDAVUsername string `mapstructure:"carddav_username"`
+
+	// CalDAVEndpoint is the CalDAV server URL for calendars.
+	CalDAVEndpoint string `mapstructure:"caldav_endpoint"`
+
+	// CalDAVUsername is the username for CalDAV authentication.
+	CalDAVUsername string `mapstructure:"caldav_username"`
 }
 
 // DefaultConfigPath returns the default configuration file path.
@@ -56,6 +63,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("output_format", "auto")
 	v.SetDefault("token", "")
 	v.SetDefault("carddav_username", "")
+	v.SetDefault("caldav_username", "")
 
 	// Configure environment variable binding
 	v.SetEnvPrefix("FASTMAIL")
@@ -83,6 +91,10 @@ func Load(configPath string) (*Config, error) {
 		cfg.CardDAVEndpoint = deriveCardDAVEndpoint(cfg.Endpoint)
 	}
 
+	if cfg.CalDAVEndpoint == "" {
+		cfg.CalDAVEndpoint = deriveCalDAVEndpoint(cfg.Endpoint)
+	}
+
 	// Validate the configuration
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -104,6 +116,24 @@ func deriveCardDAVEndpoint(endpoint string) string {
 	host := parsed.Host
 	if strings.HasPrefix(host, "api.") {
 		host = "carddav." + strings.TrimPrefix(host, "api.")
+	}
+
+	return fmt.Sprintf("%s://%s/dav/", parsed.Scheme, host)
+}
+
+func deriveCalDAVEndpoint(endpoint string) string {
+	if endpoint == "" {
+		return defaultCalDAVEndpoint
+	}
+
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return defaultCalDAVEndpoint
+	}
+
+	host := parsed.Host
+	if strings.HasPrefix(host, "api.") {
+		host = "caldav." + strings.TrimPrefix(host, "api.")
 	}
 
 	return fmt.Sprintf("%s://%s/dav/", parsed.Scheme, host)
