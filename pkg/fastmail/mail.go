@@ -2,6 +2,7 @@ package fastmail
 
 import (
 	"context"
+	"io"
 	"slices"
 	"strings"
 	"time"
@@ -89,7 +90,7 @@ func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 
 	getBuilder := jmap.NewEmailGet(accountID).
 		IDs(id).
-		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds", "attachments")
 
 	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
 	callID := req.Invoke("Email/get", getBuilder.Build())
@@ -529,18 +530,104 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 			}
 		}
 
+		attachments := convertAttachments(je.Attachments)
+
 		emails[i] = Email{
-			ID:         je.ID,
-			ThreadID:   je.ThreadID,
-			Subject:    je.Subject,
-			Preview:    je.Preview,
-			ReceivedAt: receivedAt,
-			Size:       je.Size,
-			Keywords:   keywords,
-			MailboxIDs: mailboxIDs,
+			ID:          je.ID,
+			ThreadID:    je.ThreadID,
+			Subject:     je.Subject,
+			Preview:     je.Preview,
+			ReceivedAt:  receivedAt,
+			Size:        je.Size,
+			Keywords:    keywords,
+			MailboxIDs:  mailboxIDs,
+			Attachments: attachments,
 		}
 	}
 	return emails
+}
+
+// Attachments returns just the attachment metadata for an email.
+func (s *MailService) Attachments(ctx context.Context, emailID string) ([]Attachment, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	getBuilder := jmap.NewEmailGet(accountID).
+		IDs(emailID).
+		Properties("id", "attachments")
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	callID := req.Invoke("Email/get", getBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return nil, oops.Errorf("get failed: %s", result.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := result.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding response")
+	}
+
+	if len(getResp.NotFound) > 0 || len(getResp.List) == 0 {
+		return nil, oops.Errorf("email not found: %s", emailID)
+	}
+
+	return convertAttachments(getResp.List[0].Attachments), nil
+}
+
+// DownloadAttachment downloads an attachment blob by email ID and blob ID.
+// The caller is responsible for closing the returned ReadCloser.
+func (s *MailService) DownloadAttachment(ctx context.Context, blobID, name string) (io.ReadCloser, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.client.jmap.DownloadBlob(ctx, accountID, blobID, name)
+}
+
+// UploadBlob uploads binary data as a blob and returns the blob ID and size.
+func (s *MailService) UploadBlob(ctx context.Context, data io.Reader, contentType string) (string, uint64, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+
+	resp, err := s.client.jmap.UploadBlob(ctx, accountID, data, contentType)
+	if err != nil {
+		return "", 0, oops.Wrapf(err, "uploading blob")
+	}
+
+	return resp.BlobID, resp.Size, nil
+}
+
+// convertAttachments converts JMAP body parts to domain attachments.
+func convertAttachments(parts []jmap.BodyPart) []Attachment {
+	if len(parts) == 0 {
+		return nil
+	}
+	attachments := make([]Attachment, len(parts))
+	for i, p := range parts {
+		attachments[i] = Attachment{
+			BlobID:      p.BlobID,
+			Name:        p.Name,
+			Type:        p.Type,
+			Size:        p.Size,
+			Disposition: p.Disposition,
+		}
+	}
+	return attachments
 }
 
 // GetThread returns all emails in a thread, sorted chronologically (oldest first).

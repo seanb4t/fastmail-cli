@@ -335,6 +335,190 @@ func TestClient_Call_SessionError(t *testing.T) {
 	assert.Contains(t, err.Error(), "getting session")
 }
 
+func TestClient_DownloadBlob(t *testing.T) {
+	blobContent := "binary-blob-data-here"
+
+	// Download server
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify path contains the expected components
+		assert.Contains(t, r.URL.Path, "u12345")
+		assert.Contains(t, r.URL.Path, "blob-abc")
+		assert.Contains(t, r.URL.Path, "test.pdf")
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(blobContent))
+	}))
+	defer downloadServer.Close()
+
+	// Session server with downloadUrl pointing to our download server
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"capabilities": {"urn:ietf:params:jmap:core": {}, "urn:ietf:params:jmap:mail": {}},
+			"accounts": {"u12345": {"name": "test", "isPersonal": true, "isReadOnly": false, "accountCapabilities": {"urn:ietf:params:jmap:mail": {}}}},
+			"primaryAccounts": {"urn:ietf:params:jmap:mail": "u12345"},
+			"username": "test@example.com",
+			"apiUrl": "https://api.example.com/jmap/api/",
+			"downloadUrl": "` + downloadServer.URL + `/{accountId}/{blobId}/{name}",
+			"uploadUrl": "https://api.example.com/jmap/upload/{accountId}/",
+			"eventSourceUrl": "https://api.example.com/jmap/eventsource/",
+			"state": "abc123"
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	reader, err := client.DownloadBlob(ctx, "u12345", "blob-abc", "test.pdf")
+	require.NoError(t, err)
+	require.NotNil(t, reader)
+	defer func() { _ = reader.Close() }()
+
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, blobContent, string(data))
+}
+
+func TestClient_DownloadBlob_HTTPError(t *testing.T) {
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error": "not found"}`))
+	}))
+	defer downloadServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"capabilities": {},
+			"accounts": {},
+			"primaryAccounts": {},
+			"username": "test",
+			"apiUrl": "https://example.com/api",
+			"downloadUrl": "` + downloadServer.URL + `/{accountId}/{blobId}/{name}",
+			"uploadUrl": "",
+			"eventSourceUrl": "",
+			"state": ""
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	reader, err := client.DownloadBlob(ctx, "acc1", "bad-blob", "file.txt")
+	assert.Error(t, err)
+	assert.Nil(t, reader)
+	var httpErr *HTTPError
+	if assert.ErrorAs(t, err, &httpErr) {
+		assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
+	}
+}
+
+func TestClient_UploadBlob(t *testing.T) {
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "application/pdf", r.Header.Get("Content-Type"))
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		assert.Contains(t, r.URL.Path, "u12345")
+
+		// Read the uploaded data
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Equal(t, "fake-pdf-data", string(body))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{
+			"accountId": "u12345",
+			"blobId": "blob-new-123",
+			"type": "application/pdf",
+			"size": 13
+		}`))
+	}))
+	defer uploadServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"capabilities": {"urn:ietf:params:jmap:core": {}, "urn:ietf:params:jmap:mail": {}},
+			"accounts": {"u12345": {"name": "test", "isPersonal": true, "isReadOnly": false, "accountCapabilities": {"urn:ietf:params:jmap:mail": {}}}},
+			"primaryAccounts": {"urn:ietf:params:jmap:mail": "u12345"},
+			"username": "test@example.com",
+			"apiUrl": "https://api.example.com/jmap/api/",
+			"downloadUrl": "https://api.example.com/jmap/download/{accountId}/{blobId}/{name}",
+			"uploadUrl": "` + uploadServer.URL + `/{accountId}/",
+			"eventSourceUrl": "https://api.example.com/jmap/eventsource/",
+			"state": "abc123"
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	resp, err := client.UploadBlob(ctx, "u12345", strings.NewReader("fake-pdf-data"), "application/pdf")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, "u12345", resp.AccountID)
+	assert.Equal(t, "blob-new-123", resp.BlobID)
+	assert.Equal(t, "application/pdf", resp.Type)
+	assert.Equal(t, uint64(13), resp.Size)
+}
+
+func TestClient_UploadBlob_HTTPError(t *testing.T) {
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_, _ = w.Write([]byte(`{"error": "too large"}`))
+	}))
+	defer uploadServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"capabilities": {},
+			"accounts": {},
+			"primaryAccounts": {},
+			"username": "test",
+			"apiUrl": "https://example.com/api",
+			"downloadUrl": "",
+			"uploadUrl": "` + uploadServer.URL + `/{accountId}/",
+			"eventSourceUrl": "",
+			"state": ""
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	resp, err := client.UploadBlob(ctx, "acc1", strings.NewReader("data"), "application/pdf")
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	var httpErr *HTTPError
+	if assert.ErrorAs(t, err, &httpErr) {
+		assert.Equal(t, http.StatusRequestEntityTooLarge, httpErr.StatusCode)
+	}
+}
+
+func TestBuildDownloadURL(t *testing.T) {
+	template := "https://api.example.com/jmap/download/{accountId}/{blobId}/{name}"
+	url := buildDownloadURL(template, "acc-123", "blob-456", "report.pdf")
+	assert.Equal(t, "https://api.example.com/jmap/download/acc-123/blob-456/report.pdf", url)
+}
+
+func TestBuildUploadURL(t *testing.T) {
+	template := "https://api.example.com/jmap/upload/{accountId}/"
+	url := buildUploadURL(template, "acc-123")
+	assert.Equal(t, "https://api.example.com/jmap/upload/acc-123/", url)
+}
+
 func TestClient_Call_JMAPError(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

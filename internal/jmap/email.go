@@ -24,9 +24,10 @@ type Email struct {
 	References []string       `json:"references,omitempty"`
 
 	// Body content
-	BodyValues map[string]BodyValue `json:"bodyValues,omitempty"`
-	TextBody   []BodyPart           `json:"textBody,omitempty"`
-	HTMLBody   []BodyPart           `json:"htmlBody,omitempty"`
+	BodyValues  map[string]BodyValue `json:"bodyValues,omitempty"`
+	TextBody    []BodyPart           `json:"textBody,omitempty"`
+	HTMLBody    []BodyPart           `json:"htmlBody,omitempty"`
+	Attachments []BodyPart           `json:"attachments,omitempty"`
 }
 
 // EmailAddress represents a JMAP email address.
@@ -43,9 +44,15 @@ type BodyValue struct {
 }
 
 // BodyPart describes a part of the email body structure.
+// See: https://datatracker.ietf.org/doc/html/rfc8621#section-4.1.4
 type BodyPart struct {
-	PartID string `json:"partId,omitempty"`
-	Type   string `json:"type,omitempty"`
+	PartID      string `json:"partId,omitempty"`
+	BlobID      string `json:"blobId,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Disposition string `json:"disposition,omitempty"`
+	Size        uint64 `json:"size,omitempty"`
+	Cid         string `json:"cid,omitempty"`
 }
 
 // Comparator specifies sort order for queries.

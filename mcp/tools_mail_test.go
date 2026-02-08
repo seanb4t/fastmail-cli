@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"slices"
 	"testing"
@@ -26,6 +27,9 @@ func TestRegisterMailTools(t *testing.T) {
 		"mail_delete",
 		"mail_flag",
 		"mail_thread",
+		"mail_attachments",
+		"mail_download",
+		"mail_upload",
 		"mailbox_list",
 		"mailbox_create",
 		"mailbox_rename",
@@ -681,6 +685,174 @@ func TestMailSearchTool_SnippetsNotRequired(t *testing.T) {
 		if req == "snippets" {
 			t.Error("'snippets' should not be required")
 		}
+	}
+}
+
+func TestMailAttachmentsTool(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_attachments"]
+	if !ok {
+		t.Fatal("mail_attachments tool not found")
+	}
+
+	if rt.tool.Name != "mail_attachments" {
+		t.Errorf("expected name %q, got %q", "mail_attachments", rt.tool.Name)
+	}
+
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("expected 'id' to be required")
+	}
+}
+
+func TestMailAttachmentsTool_RequiresID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_attachments"]
+	if !ok {
+		t.Fatal("mail_attachments tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+	if err.Error() != "id is required" {
+		t.Errorf("expected 'id is required', got %q", err.Error())
+	}
+}
+
+func TestMailDownloadTool(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_download"]
+	if !ok {
+		t.Fatal("mail_download tool not found")
+	}
+
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("expected 'id' to be required")
+	}
+	if !slices.Contains(rt.tool.InputSchema.Required, "blob_id") {
+		t.Error("expected 'blob_id' to be required")
+	}
+}
+
+func TestMailDownloadTool_RequiresID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_download"]
+	if !ok {
+		t.Fatal("mail_download tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{"blob_id": "blob123"})
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+	if err.Error() != "id is required" {
+		t.Errorf("expected 'id is required', got %q", err.Error())
+	}
+}
+
+func TestMailDownloadTool_RequiresBlobID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_download"]
+	if !ok {
+		t.Fatal("mail_download tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{"id": "email123"})
+	if err == nil {
+		t.Fatal("expected error for missing blob_id")
+	}
+	if err.Error() != "blob_id is required" {
+		t.Errorf("expected 'blob_id is required', got %q", err.Error())
+	}
+}
+
+func TestMailUploadTool(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_upload"]
+	if !ok {
+		t.Fatal("mail_upload tool not found")
+	}
+
+	if !slices.Contains(rt.tool.InputSchema.Required, "content") {
+		t.Error("expected 'content' to be required")
+	}
+	if !slices.Contains(rt.tool.InputSchema.Required, "content_type") {
+		t.Error("expected 'content_type' to be required")
+	}
+	if !slices.Contains(rt.tool.InputSchema.Required, "filename") {
+		t.Error("expected 'filename' to be required")
+	}
+}
+
+func TestMailUploadTool_RequiresContent(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_upload"]
+	if !ok {
+		t.Fatal("mail_upload tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{
+		"content_type": "application/pdf",
+		"filename":     "test.pdf",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing content")
+	}
+	if err.Error() != "content is required" {
+		t.Errorf("expected 'content is required', got %q", err.Error())
+	}
+}
+
+func TestMailUploadTool_RequiresContentType(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_upload"]
+	if !ok {
+		t.Fatal("mail_upload tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{
+		"content":  "SGVsbG8=",
+		"filename": "test.txt",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing content_type")
+	}
+	if err.Error() != "content_type is required" {
+		t.Errorf("expected 'content_type is required', got %q", err.Error())
+	}
+}
+
+func TestBase64Helpers(t *testing.T) {
+	original := []byte("Hello, World!")
+	encoded := base64Encode(original)
+	decoded, err := base64Decode(encoded)
+	if err != nil {
+		t.Fatalf("base64Decode error: %v", err)
+	}
+	if !bytes.Equal(decoded, original) {
+		t.Errorf("expected %q, got %q", original, decoded)
 	}
 }
 

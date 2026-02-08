@@ -3,6 +3,7 @@ package fastmail
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -1162,6 +1163,244 @@ func TestMailService_GetThread_NotFound(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, emails)
 	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestMailService_Attachments(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [
+						{
+							"id": "email-with-att",
+							"attachments": [
+								{
+									"blobId": "blob-pdf-1",
+									"name": "report.pdf",
+									"type": "application/pdf",
+									"size": 102400,
+									"disposition": "attachment"
+								},
+								{
+									"blobId": "blob-img-2",
+									"name": "photo.jpg",
+									"type": "image/jpeg",
+									"size": 51200,
+									"disposition": "attachment"
+								}
+							]
+						}
+					],
+					"notFound": []
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	attachments, err := client.Mail().Attachments(ctx, "email-with-att")
+	require.NoError(t, err)
+	require.Len(t, attachments, 2)
+
+	assert.Equal(t, "blob-pdf-1", attachments[0].BlobID)
+	assert.Equal(t, "report.pdf", attachments[0].Name)
+	assert.Equal(t, "application/pdf", attachments[0].Type)
+	assert.Equal(t, uint64(102400), attachments[0].Size)
+	assert.Equal(t, "attachment", attachments[0].Disposition)
+
+	assert.Equal(t, "blob-img-2", attachments[1].BlobID)
+	assert.Equal(t, "photo.jpg", attachments[1].Name)
+	assert.Equal(t, "image/jpeg", attachments[1].Type)
+}
+
+func TestMailService_Attachments_NotFound(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [],
+					"notFound": ["nonexistent"]
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	attachments, err := client.Mail().Attachments(ctx, "nonexistent")
+	assert.Error(t, err)
+	assert.Nil(t, attachments)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestMailService_Attachments_Empty(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [
+						{
+							"id": "email-no-att",
+							"attachments": []
+						}
+					],
+					"notFound": []
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	attachments, err := client.Mail().Attachments(ctx, "email-no-att")
+	require.NoError(t, err)
+	assert.Nil(t, attachments)
+}
+
+func TestMailService_Get_WithAttachments(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [
+						{
+							"id": "email-full",
+							"threadId": "t1",
+							"subject": "Email With Attachment",
+							"preview": "See attached",
+							"receivedAt": "2024-01-15T10:30:00Z",
+							"size": 51200,
+							"keywords": {"$seen": true},
+							"mailboxIds": {"mb1": true},
+							"attachments": [
+								{
+									"blobId": "blob-doc-1",
+									"name": "document.docx",
+									"type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+									"size": 25600,
+									"disposition": "attachment"
+								}
+							]
+						}
+					],
+					"notFound": []
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	email, err := client.Mail().Get(ctx, "email-full")
+	require.NoError(t, err)
+	require.NotNil(t, email)
+
+	assert.Equal(t, "email-full", email.ID)
+	assert.Equal(t, "Email With Attachment", email.Subject)
+	require.Len(t, email.Attachments, 1)
+	assert.Equal(t, "blob-doc-1", email.Attachments[0].BlobID)
+	assert.Equal(t, "document.docx", email.Attachments[0].Name)
+}
+
+func TestMailService_DownloadAttachment(t *testing.T) {
+	blobContent := "fake-pdf-binary-data"
+
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.Path, "blob-pdf-1")
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(blobContent))
+	}))
+	defer downloadServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"capabilities": {
+				"urn:ietf:params:jmap:core": {},
+				"urn:ietf:params:jmap:mail": {}
+			},
+			"accounts": {
+				"acc1": {
+					"name": "test@example.com",
+					"isPersonal": true,
+					"isReadOnly": false,
+					"accountCapabilities": {"urn:ietf:params:jmap:mail": {}}
+				}
+			},
+			"primaryAccounts": {"urn:ietf:params:jmap:mail": "acc1"},
+			"username": "test@example.com",
+			"apiUrl": "https://api.example.com/jmap/api/",
+			"downloadUrl": "` + downloadServer.URL + `/{accountId}/{blobId}/{name}",
+			"uploadUrl": "https://api.example.com/jmap/upload/{accountId}/",
+			"eventSourceUrl": "https://api.example.com/jmap/eventsource/",
+			"state": "s1"
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+	require.NoError(t, client.Connect(ctx))
+
+	reader, err := client.Mail().DownloadAttachment(ctx, "blob-pdf-1", "report.pdf")
+	require.NoError(t, err)
+	require.NotNil(t, reader)
+	defer func() { _ = reader.Close() }()
+
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, blobContent, string(data))
 }
 
 func TestMailService_SearchWithSnippets(t *testing.T) {

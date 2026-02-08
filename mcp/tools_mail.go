@@ -3,7 +3,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"io"
 	"time"
 
 	"github.com/samber/oops"
@@ -119,6 +122,34 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 			WithProperty("keywords", "object", "Keywords to set/remove. Keys are keyword names, values are true (set) or false (remove)").
 			WithRequired("id", "keywords"),
 		makeMailFlagHandler(cfg),
+	)
+
+	// mail_attachments - List attachments for an email
+	s.RegisterTool(
+		NewTool("mail_attachments", "List attachments on an email").
+			WithProperty("id", "string", "The email ID").
+			WithRequired("id"),
+		makeMailAttachmentsHandler(cfg),
+	)
+
+	// mail_download - Download an attachment blob
+	s.RegisterTool(
+		NewTool("mail_download", "Download an email attachment blob").
+			WithProperty("id", "string", "The email ID").
+			WithProperty("blob_id", "string", "The blob ID of the attachment").
+			WithProperty("name", "string", "Filename hint for the download (optional)").
+			WithRequired("id", "blob_id"),
+		makeMailDownloadHandler(cfg),
+	)
+
+	// mail_upload - Upload a blob
+	s.RegisterTool(
+		NewTool("mail_upload", "Upload a blob for use in email drafts").
+			WithProperty("content", "string", "Base64-encoded file content").
+			WithProperty("content_type", "string", "MIME content type (e.g., 'application/pdf')").
+			WithProperty("filename", "string", "Filename for the blob").
+			WithRequired("content", "content_type", "filename"),
+		makeMailUploadHandler(cfg),
 	)
 }
 
@@ -337,6 +368,119 @@ func makeMailFlagHandler(cfg ToolsConfig) ToolHandler {
 		return map[string]any{
 			"id":     id,
 			"status": "updated",
+		}, nil
+	}
+}
+
+func makeMailAttachmentsHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		attachments, err := cfg.Client.Mail().Attachments(ctx, id)
+		if err != nil {
+			return nil, oops.Wrapf(err, "getting attachments")
+		}
+
+		result := make([]map[string]any, len(attachments))
+		for i, att := range attachments {
+			result[i] = map[string]any{
+				"blob_id":     att.BlobID,
+				"name":        att.Name,
+				"type":        att.Type,
+				"size":        att.Size,
+				"disposition": att.Disposition,
+			}
+		}
+		return result, nil
+	}
+}
+
+func makeMailDownloadHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+		blobID := getStringArg(args, "blob_id", "")
+		if blobID == "" {
+			return nil, oops.Errorf("blob_id is required")
+		}
+		name := getStringArg(args, "name", "download")
+
+		// First verify the blob_id exists on this email
+		attachments, err := cfg.Client.Mail().Attachments(ctx, id)
+		if err != nil {
+			return nil, oops.Wrapf(err, "getting attachments")
+		}
+
+		var att *fastmail.Attachment
+		for i, a := range attachments {
+			if a.BlobID == blobID {
+				att = &attachments[i]
+				break
+			}
+		}
+		if att == nil {
+			return nil, oops.Errorf("blob %s not found on email %s", blobID, id)
+		}
+		if att.Name != "" {
+			name = att.Name
+		}
+
+		reader, err := cfg.Client.Mail().DownloadAttachment(ctx, blobID, name)
+		if err != nil {
+			return nil, oops.Wrapf(err, "downloading attachment")
+		}
+		defer func() { _ = reader.Close() }()
+
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, oops.Wrapf(err, "reading attachment data")
+		}
+
+		return map[string]any{
+			"blob_id":  blobID,
+			"name":     name,
+			"type":     att.Type,
+			"size":     len(data),
+			"content":  base64Encode(data),
+			"encoding": "base64",
+		}, nil
+	}
+}
+
+func makeMailUploadHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		content := getStringArg(args, "content", "")
+		if content == "" {
+			return nil, oops.Errorf("content is required")
+		}
+		contentType := getStringArg(args, "content_type", "")
+		if contentType == "" {
+			return nil, oops.Errorf("content_type is required")
+		}
+		filename := getStringArg(args, "filename", "")
+		if filename == "" {
+			return nil, oops.Errorf("filename is required")
+		}
+
+		data, err := base64Decode(content)
+		if err != nil {
+			return nil, oops.Wrapf(err, "decoding base64 content")
+		}
+
+		blobID, size, err := cfg.Client.Mail().UploadBlob(ctx, bytes.NewReader(data), contentType)
+		if err != nil {
+			return nil, oops.Wrapf(err, "uploading blob")
+		}
+
+		return map[string]any{
+			"blob_id":  blobID,
+			"size":     size,
+			"filename": filename,
 		}, nil
 	}
 }
@@ -884,6 +1028,14 @@ func getStringSliceArg(args map[string]any, key string) []string {
 		}
 	}
 	return nil
+}
+
+func base64Encode(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data)
+}
+
+func base64Decode(s string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(s)
 }
 
 func parseAddresses(addrs []string) []fastmail.EmailAddress {

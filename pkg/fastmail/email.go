@@ -53,6 +53,27 @@ type Email struct {
 
 	// Size is the email size in bytes.
 	Size uint64
+
+	// Attachments contains any file attachments on this email.
+	Attachments []Attachment
+}
+
+// Attachment represents a file attachment on an email.
+type Attachment struct {
+	// BlobID is the server-side blob identifier for downloading.
+	BlobID string
+
+	// Name is the filename of the attachment.
+	Name string
+
+	// Type is the MIME content type (e.g., "application/pdf").
+	Type string
+
+	// Size is the attachment size in bytes.
+	Size uint64
+
+	// Disposition is the Content-Disposition (e.g., "attachment", "inline").
+	Disposition string
 }
 
 // EmailAddress represents an email address with optional display name.

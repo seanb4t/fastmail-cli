@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -31,6 +34,9 @@ func newMailCommand() *cobra.Command {
 	cmd.AddCommand(newMailDeleteCommand())
 	cmd.AddCommand(newMailFlagCommand())
 	cmd.AddCommand(newMailThreadCommand())
+	cmd.AddCommand(newMailAttachmentsCommand())
+	cmd.AddCommand(newMailDownloadCommand())
+	cmd.AddCommand(newMailUploadCommand())
 
 	return cmd
 }
@@ -491,6 +497,12 @@ func outputEmail(cmd *cobra.Command, email *fastmail.Email) error {
 	if email.Preview != "" {
 		_, _ = fmt.Fprintf(w, "Preview: %s\n", email.Preview)
 	}
+	if len(email.Attachments) > 0 {
+		_, _ = fmt.Fprintf(w, "\nAttachments (%d):\n", len(email.Attachments))
+		for _, att := range email.Attachments {
+			_, _ = fmt.Fprintf(w, "  - %s (%s, %s)\n", att.Name, att.Type, formatSize(att.Size))
+		}
+	}
 
 	return nil
 }
@@ -692,4 +704,261 @@ func outputFlagResult(cmd *cobra.Command, emailID string, actions []fastmail.Key
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email %s flags updated\n", emailID)
 	return nil
+}
+
+// newMailAttachmentsCommand creates the mail attachments command.
+func newMailAttachmentsCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "attachments EMAIL_ID",
+		Short: "List attachments on an email",
+		Long:  "Display the attachments on an email message.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			attachments, err := client.Mail().Attachments(ctx, emailID)
+			if err != nil {
+				return fmt.Errorf("getting attachments: %w", err)
+			}
+
+			return outputAttachments(cmd, attachments)
+		},
+	}
+
+	return cmd
+}
+
+// newMailDownloadCommand creates the mail download command.
+func newMailDownloadCommand() *cobra.Command {
+	var (
+		attachmentName string
+		blobID         string
+		output         string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "download EMAIL_ID",
+		Short: "Download an attachment",
+		Long:  "Download an email attachment by name or blob ID.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			if attachmentName == "" && blobID == "" {
+				return fmt.Errorf("either --attachment or --blob-id is required")
+			}
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			// Find the attachment
+			attachments, err := client.Mail().Attachments(ctx, emailID)
+			if err != nil {
+				return fmt.Errorf("getting attachments: %w", err)
+			}
+
+			att, err := findAttachment(attachments, attachmentName, blobID)
+			if err != nil {
+				return err
+			}
+
+			// Download the blob
+			reader, err := client.Mail().DownloadAttachment(ctx, att.BlobID, att.Name)
+			if err != nil {
+				return fmt.Errorf("downloading attachment: %w", err)
+			}
+			defer func() { _ = reader.Close() }()
+
+			// Write to file or stdout
+			return writeAttachment(cmd, reader, att, output)
+		},
+	}
+
+	cmd.Flags().StringVar(&attachmentName, "attachment", "", "attachment filename to download")
+	cmd.Flags().StringVar(&blobID, "blob-id", "", "blob ID to download")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path (default: stdout)")
+
+	return cmd
+}
+
+// newMailUploadCommand creates the mail upload command.
+func newMailUploadCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "upload FILE",
+		Short: "Upload a file as a blob",
+		Long:  "Upload a file to the server for use in email drafts.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			filePath := args[0]
+
+			f, err := os.Open(filePath) // #nosec G304 -- user-provided file path is expected
+			if err != nil {
+				return fmt.Errorf("opening file: %w", err)
+			}
+			defer func() { _ = f.Close() }()
+
+			contentType := detectContentType(filePath)
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			blobID, size, err := client.Mail().UploadBlob(ctx, f, contentType)
+			if err != nil {
+				return fmt.Errorf("uploading file: %w", err)
+			}
+
+			return outputUploadResult(cmd, blobID, size, filePath)
+		},
+	}
+
+	return cmd
+}
+
+// findAttachment finds an attachment by name or blob ID.
+func findAttachment(attachments []fastmail.Attachment, name, blobID string) (*fastmail.Attachment, error) {
+	for i, att := range attachments {
+		if blobID != "" && att.BlobID == blobID {
+			return &attachments[i], nil
+		}
+		if name != "" && strings.EqualFold(att.Name, name) {
+			return &attachments[i], nil
+		}
+	}
+
+	if blobID != "" {
+		return nil, fmt.Errorf("attachment with blob ID %q not found", blobID)
+	}
+	return nil, fmt.Errorf("attachment %q not found", name)
+}
+
+// writeAttachment writes the downloaded blob to a file or stdout.
+func writeAttachment(cmd *cobra.Command, reader io.Reader, att *fastmail.Attachment, output string) (err error) {
+	var w io.Writer
+	if output == "" {
+		w = cmd.OutOrStdout()
+	} else {
+		f, ferr := os.Create(output) // #nosec G304 -- user-provided output path is expected
+		if ferr != nil {
+			return fmt.Errorf("creating output file: %w", ferr)
+		}
+		defer func() {
+			if cerr := f.Close(); cerr != nil && err == nil {
+				err = fmt.Errorf("closing output file: %w", cerr)
+			}
+		}()
+		w = f
+	}
+
+	written, err := io.Copy(w, reader)
+	if err != nil {
+		return fmt.Errorf("writing attachment: %w", err)
+	}
+
+	if output != "" && !IsQuiet() {
+		var size uint64
+		if written > 0 {
+			size = uint64(written) // #nosec G115 -- written is non-negative from io.Copy
+		}
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Downloaded %s (%s) to %s\n", att.Name, formatSize(size), output)
+	}
+	return nil
+}
+
+// detectContentType guesses the MIME type from a file extension.
+func detectContentType(path string) string {
+	ext := filepath.Ext(path)
+	if ext != "" {
+		if ct := mime.TypeByExtension(ext); ct != "" {
+			return ct
+		}
+	}
+	return "application/octet-stream"
+}
+
+// outputAttachments writes attachment list to output.
+func outputAttachments(cmd *cobra.Command, attachments []fastmail.Attachment) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(attachments)
+	}
+
+	w := cmd.OutOrStdout()
+	if len(attachments) == 0 {
+		_, _ = fmt.Fprintln(w, "No attachments")
+		return nil
+	}
+
+	for _, att := range attachments {
+		_, _ = fmt.Fprintf(w, "%-40s  %-30s  %8s  %s\n", att.Name, att.Type, formatSize(att.Size), att.BlobID)
+	}
+	return nil
+}
+
+// outputUploadResult writes the upload result to output.
+func outputUploadResult(cmd *cobra.Command, blobID string, size uint64, filename string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]any{
+			"blob_id":  blobID,
+			"size":     size,
+			"filename": filepath.Base(filename),
+		}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Uploaded: blob_id=%s size=%s\n", blobID, formatSize(size))
+	return nil
+}
+
+// formatSize formats a byte count into a human-readable string.
+func formatSize(bytes uint64) string {
+	const (
+		kb = 1024
+		mb = kb * 1024
+		gb = mb * 1024
+	)
+	switch {
+	case bytes >= gb:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(gb))
+	case bytes >= mb:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(mb))
+	case bytes >= kb:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }
