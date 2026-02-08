@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/seanb4t/fastmail-cli/internal/auth"
 	"github.com/seanb4t/fastmail-cli/internal/config"
+	"github.com/seanb4t/fastmail-cli/internal/search"
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
 
@@ -23,8 +25,13 @@ func newMailCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newMailListCommand())
+	cmd.AddCommand(newMailSearchCommand())
+	cmd.AddCommand(newMailShowCommand())
 	cmd.AddCommand(newMailSendCommand())
 	cmd.AddCommand(newMailReplyCommand())
+	cmd.AddCommand(newMailMoveCommand())
+	cmd.AddCommand(newMailDeleteCommand())
+	cmd.AddCommand(newMailFlagCommand())
 
 	return cmd
 }
@@ -61,6 +68,42 @@ func newMailListCommand() *cobra.Command {
 	cmd.Flags().Uint64VarP(&limit, "limit", "n", 10, "maximum emails to return")
 	cmd.Flags().StringVarP(&folder, "folder", "f", "Inbox", "mailbox folder name")
 
+	return cmd
+}
+
+// newMailSearchCommand creates the mail search command.
+func newMailSearchCommand() *cobra.Command {
+	var limit uint64
+
+	cmd := &cobra.Command{
+		Use:   "search QUERY...",
+		Short: "Search emails",
+		Long:  "Search emails using query syntax (e.g., 'from:alice subject:meeting').",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			query := strings.Join(args, " ")
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			filter := search.Parse(query)
+			emails, err := client.Mail().SearchWithFilter(ctx, filter, limit)
+			if err != nil {
+				return fmt.Errorf("searching emails: %w", err)
+			}
+
+			return outputEmails(cmd, emails)
+		},
+	}
+
+	cmd.Flags().Uint64VarP(&limit, "limit", "n", 25, "maximum results to return")
 	return cmd
 }
 
@@ -177,6 +220,100 @@ func newMailReplyCommand() *cobra.Command {
 	return cmd
 }
 
+// newMailShowCommand creates the mail show command.
+func newMailShowCommand() *cobra.Command {
+	var raw bool
+
+	cmd := &cobra.Command{
+		Use:   "show EMAIL_ID",
+		Short: "Show an email",
+		Long:  "Display a single email message by its ID.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if raw {
+				reader, err := client.Mail().GetRaw(ctx, emailID)
+				if err != nil {
+					return fmt.Errorf("getting raw email: %w", err)
+				}
+				defer func() { _ = reader.Close() }()
+
+				if _, err = io.Copy(cmd.OutOrStdout(), reader); err != nil {
+					return fmt.Errorf("writing raw email: %w", err)
+				}
+				return nil
+			}
+
+			email, err := client.Mail().GetFull(ctx, emailID)
+			if err != nil {
+				return fmt.Errorf("getting email: %w", err)
+			}
+
+			return outputEmailDetail(cmd, email)
+		},
+	}
+
+	cmd.Flags().BoolVar(&raw, "raw", false, "output raw RFC 5322 source")
+
+	return cmd
+}
+
+// outputEmailDetail writes a single email in formatted or JSON output.
+func outputEmailDetail(cmd *cobra.Command, email *fastmail.Email) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(email)
+	}
+
+	w := cmd.OutOrStdout()
+
+	_, _ = fmt.Fprintf(w, "From:    %s\n", email.From.String())
+	_, _ = fmt.Fprintf(w, "To:      %s\n", formatAddressList(email.To))
+	if len(email.Cc) > 0 {
+		_, _ = fmt.Fprintf(w, "Cc:      %s\n", formatAddressList(email.Cc))
+	}
+	if len(email.Bcc) > 0 {
+		_, _ = fmt.Fprintf(w, "Bcc:     %s\n", formatAddressList(email.Bcc))
+	}
+	_, _ = fmt.Fprintf(w, "Date:    %s\n", email.ReceivedAt.Format("2006-01-02 15:04"))
+	_, _ = fmt.Fprintf(w, "Subject: %s\n", email.Subject)
+	_, _ = fmt.Fprintf(w, "\n%s\n", email.Body)
+
+	if len(email.Attachments) > 0 {
+		_, _ = fmt.Fprintf(w, "\nAttachments:\n")
+		for _, a := range email.Attachments {
+			_, _ = fmt.Fprintf(w, "  - %s (%s, %d bytes)\n", a.Name, a.Type, a.Size)
+		}
+	}
+
+	return nil
+}
+
+// formatAddressList formats a slice of email addresses as a comma-separated string.
+func formatAddressList(addrs []fastmail.EmailAddress) string {
+	parts := make([]string, len(addrs))
+	for i, a := range addrs {
+		parts[i] = a.String()
+	}
+	return strings.Join(parts, ", ")
+}
+
 // createClient creates and configures a Fastmail client.
 func createClient() (*fastmail.Client, error) {
 	configPath := GetConfigPath()
@@ -241,6 +378,194 @@ func outputEmails(cmd *cobra.Command, emails []fastmail.Email) error {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s%s\n", e.ID, e.Subject, status)
 	}
 
+	return nil
+}
+
+// newMailMoveCommand creates the mail move command.
+func newMailMoveCommand() *cobra.Command {
+	var folder string
+
+	cmd := &cobra.Command{
+		Use:   "move EMAIL_ID",
+		Short: "Move an email to a folder",
+		Long:  "Move an email to a different mailbox folder.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().Move(ctx, emailID, folder); err != nil {
+				return fmt.Errorf("moving email: %w", err)
+			}
+
+			return outputMoveResult(cmd, emailID, folder)
+		},
+	}
+
+	cmd.Flags().StringVarP(&folder, "folder", "f", "", "destination folder name")
+	_ = cmd.MarkFlagRequired("folder")
+
+	return cmd
+}
+
+// newMailDeleteCommand creates the mail delete command.
+func newMailDeleteCommand() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete EMAIL_ID",
+		Short: "Delete an email",
+		Long:  "Delete an email. Requires --force to confirm.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			if !force {
+				return fmt.Errorf("use --force to confirm deletion")
+			}
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().Delete(ctx, emailID); err != nil {
+				return fmt.Errorf("deleting email: %w", err)
+			}
+
+			return outputDeleteResult(cmd, emailID)
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "confirm deletion")
+
+	return cmd
+}
+
+// outputMoveResult writes the move result to output.
+func outputMoveResult(cmd *cobra.Command, emailID, folder string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "folder": folder, "status": "moved"}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email moved to %s\n", folder)
+	return nil
+}
+
+// outputDeleteResult writes the delete result to output.
+func outputDeleteResult(cmd *cobra.Command, emailID string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "status": "deleted"}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email deleted: %s\n", emailID)
+	return nil
+}
+
+// newMailFlagCommand creates the mail flag command.
+func newMailFlagCommand() *cobra.Command {
+	var read, unread, flagged, unflagged bool
+
+	cmd := &cobra.Command{
+		Use:   "flag EMAIL_ID",
+		Short: "Set email flags",
+		Long:  "Set or remove email flags (read, flagged).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			if !read && !unread && !flagged && !unflagged {
+				return fmt.Errorf("at least one flag is required (--read, --unread, --flagged, --unflagged)")
+			}
+			if read && unread {
+				return fmt.Errorf("--read and --unread are mutually exclusive")
+			}
+			if flagged && unflagged {
+				return fmt.Errorf("--flagged and --unflagged are mutually exclusive")
+			}
+
+			keywords := make(map[string]bool)
+			if read {
+				keywords["$seen"] = true
+			}
+			if unread {
+				keywords["$seen"] = false
+			}
+			if flagged {
+				keywords["$flagged"] = true
+			}
+			if unflagged {
+				keywords["$flagged"] = false
+			}
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().SetKeywords(ctx, emailID, keywords); err != nil {
+				return fmt.Errorf("setting flags: %w", err)
+			}
+
+			return outputFlagResult(cmd, emailID)
+		},
+	}
+
+	cmd.Flags().BoolVar(&read, "read", false, "mark as read")
+	cmd.Flags().BoolVar(&unread, "unread", false, "mark as unread")
+	cmd.Flags().BoolVar(&flagged, "flagged", false, "mark as flagged")
+	cmd.Flags().BoolVar(&unflagged, "unflagged", false, "remove flagged")
+
+	return cmd
+}
+
+// outputFlagResult writes the flag result to output.
+func outputFlagResult(cmd *cobra.Command, emailID string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "status": "updated"}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email flags updated: %s\n", emailID)
 	return nil
 }
 

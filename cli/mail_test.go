@@ -21,11 +21,62 @@ func TestMailHelp_ShowsSubcommands(t *testing.T) {
 	output := buf.String()
 
 	// Should show all subcommands
-	subcommands := []string{"list", "send", "reply"}
+	subcommands := []string{"list", "search", "show", "send", "reply", "move", "delete", "flag"}
 	for _, sub := range subcommands {
 		if !strings.Contains(output, sub) {
 			t.Errorf("expected %q subcommand in help, got: %q", sub, output)
 		}
+	}
+}
+
+func TestMailSearch_RequiresQuery(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "search"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail search without query should error")
+	}
+}
+
+func TestMailShow_RequiresIDArg(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "show"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail show without ID should error")
+	}
+
+	if !strings.Contains(err.Error(), "arg") {
+		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailShow_HelpShowsRawFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "show", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail show --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "--raw") {
+		t.Error("expected --raw flag in help output")
+	}
+	if !strings.Contains(output, "EMAIL_ID") {
+		t.Error("expected EMAIL_ID in usage")
 	}
 }
 
@@ -181,5 +232,125 @@ func TestParseAddresses_MultipleAddresses(t *testing.T) {
 	}
 	if addrs[1].Name != "Bob" {
 		t.Errorf("expected second name 'Bob', got %q", addrs[1].Name)
+	}
+}
+
+func TestMailMove_RequiresIDArg(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "move", "--folder", "Archive"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail move without ID should error")
+	}
+}
+
+func TestMailMove_RequiresFolder(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "move", "email-123"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail move without --folder should error")
+	}
+}
+
+func TestMailDelete_RequiresIDArg(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "delete", "--force"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail delete without ID should error")
+	}
+}
+
+func TestMailFlag_RequiresIDArg(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag without ID should error")
+	}
+}
+
+func TestMailFlag_RequiresAtLeastOneFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag", "email-123"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag without any flags should error")
+	}
+
+	if !strings.Contains(err.Error(), "at least one flag") {
+		t.Errorf("expected 'at least one flag' in error, got: %v", err)
+	}
+}
+
+func TestMailDelete_RequiresForce(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "delete", "email-123"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail delete without --force should error")
+	}
+
+	if !strings.Contains(err.Error(), "force") {
+		t.Errorf("expected 'force' in error, got: %v", err)
+	}
+}
+
+func TestMailFlag_MutuallyExclusiveReadUnread(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag", "email-123", "--read", "--unread"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag with --read and --unread should error")
+	}
+
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected 'mutually exclusive' in error, got: %v", err)
+	}
+}
+
+func TestMailFlag_MutuallyExclusiveFlaggedUnflagged(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag", "email-123", "--flagged", "--unflagged"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag with --flagged and --unflagged should error")
+	}
+
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected 'mutually exclusive' in error, got: %v", err)
 	}
 }

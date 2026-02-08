@@ -53,6 +53,9 @@ type Email struct {
 
 	// Size is the email size in bytes.
 	Size uint64
+
+	// Attachments contains the email's attachments.
+	Attachments []Attachment
 }
 
 // EmailAddress represents an email address with optional display name.
@@ -62,6 +65,21 @@ type EmailAddress struct {
 
 	// Email is the email address (e.g., "john@example.com").
 	Email string
+}
+
+// Attachment represents an email attachment.
+type Attachment struct {
+	// Name is the filename of the attachment.
+	Name string
+
+	// Type is the MIME type (e.g., "application/pdf").
+	Type string
+
+	// Size is the attachment size in bytes.
+	Size uint64
+
+	// BlobID is the JMAP blob identifier for downloading.
+	BlobID string
 }
 
 // String returns the formatted email address.

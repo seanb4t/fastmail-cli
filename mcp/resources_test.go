@@ -3,7 +3,10 @@ package mcp
 import (
 	"context"
 	"regexp"
+	"strings"
 	"testing"
+
+	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
 
 func TestResourceRegistry_List(t *testing.T) {
@@ -21,6 +24,10 @@ func TestResourceRegistry_List(t *testing.T) {
 		"fastmail://contacts":       false,
 		"fastmail://calendar/today": false,
 		"fastmail://masked-emails":  false,
+		"fastmail://mailboxes":      false,
+		"fastmail://identities":     false,
+		"fastmail://vacation":       false,
+		"fastmail://calendars":      false,
 	}
 
 	for _, res := range resources {
@@ -96,6 +103,10 @@ func TestResourceRegistry_URIPatternMatching(t *testing.T) {
 		{"fastmail://contacts", true},
 		{"fastmail://calendar/today", true},
 		{"fastmail://masked-emails", true},
+		{"fastmail://mailboxes", true},
+		{"fastmail://identities", true},
+		{"fastmail://vacation", true},
+		{"fastmail://calendars", true},
 	}
 
 	for _, tt := range tests {
@@ -217,13 +228,211 @@ func TestResourceContent(t *testing.T) {
 func TestCalendarToday_NoConfig(t *testing.T) {
 	registry := NewResourceRegistry(nil)
 
-	// Calendar should return informative message even without client
-	content, err := registry.Read(context.Background(), "fastmail://calendar/today")
+	// Calendar should return an error when CalDAV is not configured,
+	// not a fake success with error text in the body
+	_, err := registry.Read(context.Background(), "fastmail://calendar/today")
+	if err == nil {
+		t.Fatal("expected error when CalDAV is not configured, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "CalDAV") {
+		t.Errorf("expected error to mention CalDAV configuration, got: %v", err)
+	}
+}
+
+func TestContacts_NoConfig(t *testing.T) {
+	registry := NewResourceRegistry(nil)
+
+	// Contacts should return an error when CardDAV is not configured,
+	// not a fake success with error text in the body
+	_, err := registry.Read(context.Background(), "fastmail://contacts")
+	if err == nil {
+		t.Fatal("expected error when CardDAV is not configured, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "CardDAV") {
+		t.Errorf("expected error to mention CardDAV configuration, got: %v", err)
+	}
+}
+
+func TestMailboxes_NoClient(t *testing.T) {
+	registry := NewResourceRegistry(nil)
+
+	_, err := registry.Read(context.Background(), "fastmail://mailboxes")
+	if err == nil {
+		t.Error("expected error when client is not configured")
+	}
+}
+
+func TestIdentities_NoClient(t *testing.T) {
+	registry := NewResourceRegistry(nil)
+
+	_, err := registry.Read(context.Background(), "fastmail://identities")
+	if err == nil {
+		t.Error("expected error when client is not configured")
+	}
+}
+
+func TestVacation_NoClient(t *testing.T) {
+	registry := NewResourceRegistry(nil)
+
+	_, err := registry.Read(context.Background(), "fastmail://vacation")
+	if err == nil {
+		t.Error("expected error when client is not configured")
+	}
+}
+
+func TestCalendars_NoAdapter(t *testing.T) {
+	registry := NewResourceRegistry(nil)
+
+	// Calendars should return informative message without adapter
+	content, err := registry.Read(context.Background(), "fastmail://calendars")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if content.Text == "" {
 		t.Error("expected informative message about calendar config")
+	}
+}
+
+func TestFormatMailboxList_Empty(t *testing.T) {
+	result := formatMailboxList(nil)
+	if result != "No mailboxes found." {
+		t.Errorf("expected 'No mailboxes found.', got %q", result)
+	}
+}
+
+func TestFormatMailboxList_WithData(t *testing.T) {
+	mailboxes := []fastmail.Mailbox{
+		{ID: "mb1", Name: "Inbox", Role: "inbox", TotalEmails: 42, UnreadEmails: 5},
+		{ID: "mb2", Name: "Custom", TotalEmails: 10, UnreadEmails: 0, ParentID: "mb1"},
+	}
+
+	result := formatMailboxList(mailboxes)
+	if !strings.Contains(result, "Inbox") {
+		t.Error("expected output to contain 'Inbox'")
+	}
+	if !strings.Contains(result, "Role: inbox") {
+		t.Error("expected output to contain role")
+	}
+	if !strings.Contains(result, "42 emails, 5 unread") {
+		t.Error("expected output to contain email counts")
+	}
+	if !strings.Contains(result, "Parent: mb1") {
+		t.Error("expected output to contain parent ID for nested mailbox")
+	}
+}
+
+func TestFormatIdentityList_Empty(t *testing.T) {
+	result := formatIdentityList(nil)
+	if result != "No identities found." {
+		t.Errorf("expected 'No identities found.', got %q", result)
+	}
+}
+
+func TestFormatIdentityList_WithData(t *testing.T) {
+	identities := []fastmail.Identity{
+		{ID: "id1", Name: "Alice", Email: "alice@example.com", MayDelete: true},
+		{ID: "id2", Name: "Bob", Email: "bob@example.com", TextSignature: "Best regards"},
+	}
+
+	result := formatIdentityList(identities)
+	if !strings.Contains(result, "Alice") {
+		t.Error("expected output to contain 'Alice'")
+	}
+	if !strings.Contains(result, "alice@example.com") {
+		t.Error("expected output to contain email")
+	}
+	if !strings.Contains(result, "May delete: yes") {
+		t.Error("expected output to contain may delete")
+	}
+	if !strings.Contains(result, "Signature:") {
+		t.Error("expected output to contain signature")
+	}
+}
+
+func TestFormatVacation_Enabled(t *testing.T) {
+	v := &fastmail.Vacation{
+		IsEnabled: true,
+		Subject:   "Out of Office",
+		FromDate:  "2026-01-01",
+		ToDate:    "2026-01-15",
+		TextBody:  "I am currently out of the office.",
+	}
+
+	result := formatVacation(v)
+	if !strings.Contains(result, "**enabled**") {
+		t.Error("expected output to show enabled status")
+	}
+	if !strings.Contains(result, "Out of Office") {
+		t.Error("expected output to contain subject")
+	}
+	if !strings.Contains(result, "2026-01-01") {
+		t.Error("expected output to contain from date")
+	}
+	if !strings.Contains(result, "I am currently out of the office.") {
+		t.Error("expected output to contain message body")
+	}
+}
+
+func TestFormatVacation_Disabled(t *testing.T) {
+	v := &fastmail.Vacation{IsEnabled: false}
+
+	result := formatVacation(v)
+	if !strings.Contains(result, "disabled") {
+		t.Error("expected output to show disabled status")
+	}
+}
+
+func TestFormatCalendarList_Empty(t *testing.T) {
+	result := formatCalendarList(nil)
+	if result != "No calendars found." {
+		t.Errorf("expected 'No calendars found.', got %q", result)
+	}
+}
+
+func TestFormatCalendarList_WithData(t *testing.T) {
+	calendars := []fastmail.Calendar{
+		{ID: "cal1", Name: "Personal", Color: "#FF0000", IsDefaultCalendar: true},
+		{ID: "cal2", Name: "Work", Description: "Work calendar", ReadOnly: true},
+	}
+
+	result := formatCalendarList(calendars)
+	if !strings.Contains(result, "Personal") {
+		t.Error("expected output to contain 'Personal'")
+	}
+	if !strings.Contains(result, "Default: yes") {
+		t.Error("expected output to contain default indicator")
+	}
+	if !strings.Contains(result, "Color: #FF0000") {
+		t.Error("expected output to contain color")
+	}
+	if !strings.Contains(result, "Work calendar") {
+		t.Error("expected output to contain description")
+	}
+	if !strings.Contains(result, "Read-only: yes") {
+		t.Error("expected output to contain read-only indicator")
+	}
+}
+
+func TestWithCalendarAdapter(t *testing.T) {
+	adapter := &CalendarAdapter{
+		ListCalendarsFunc: func(_ context.Context) ([]fastmail.Calendar, error) {
+			return []fastmail.Calendar{
+				{ID: "cal1", Name: "Test Calendar"},
+			}, nil
+		},
+	}
+
+	registry := NewResourceRegistry(nil, WithCalendarAdapter(adapter))
+
+	content, err := registry.Read(context.Background(), "fastmail://calendars")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(content.Text, "Test Calendar") {
+		t.Error("expected output to contain calendar from adapter")
 	}
 }

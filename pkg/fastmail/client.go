@@ -46,11 +46,35 @@ func (c *Client) Mail() *MailService {
 	}
 }
 
+// Mailbox returns the mailbox service for folder operations.
+func (c *Client) Mailbox() *MailboxService {
+	return &MailboxService{
+		client: c,
+	}
+}
+
 // MaskedEmail returns the masked email service for masked email operations.
 func (c *Client) MaskedEmail() *MaskedEmailService {
 	return &MaskedEmailService{
 		client: c,
 	}
+}
+
+// Identity returns the identity service for sender identity operations.
+func (c *Client) Identity() *IdentityService {
+	return &IdentityService{
+		client: c,
+	}
+}
+
+// Vacation returns the vacation service for auto-reply operations.
+func (c *Client) Vacation() *VacationService {
+	return &VacationService{client: c}
+}
+
+// Thread returns the thread service for conversation operations.
+func (c *Client) Thread() *ThreadService {
+	return &ThreadService{client: c}
 }
 
 // accountID returns the current account ID, fetching session if needed.

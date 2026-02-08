@@ -1,9 +1,13 @@
 package mcp
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
@@ -23,13 +27,23 @@ func TestRegisterMailTools(t *testing.T) {
 		"mail_reply",
 		"mail_move",
 		"mail_delete",
+		"mailbox_list",
+		"mailbox_create",
+		"mailbox_rename",
+		"mailbox_delete",
 		"masked_email_list",
 		"masked_email_create",
 		"contacts_list",
 		"contacts_get",
 		"contacts_create",
+		"contacts_update",
+		"contacts_delete",
 		"calendar_events",
 		"calendar_create",
+		"calendar_get",
+		"calendar_update",
+		"calendar_delete",
+		"calendar_calendars",
 	}
 
 	for _, name := range expectedTools {
@@ -169,6 +183,64 @@ func TestContactTools(t *testing.T) {
 	if _, ok := server.tools["contacts_create"]; !ok {
 		t.Error("contacts_create tool not found")
 	}
+	if _, ok := server.tools["contacts_update"]; !ok {
+		t.Error("contacts_update tool not found")
+	}
+	if _, ok := server.tools["contacts_delete"]; !ok {
+		t.Error("contacts_delete tool not found")
+	}
+
+	// Verify contacts_update requires id
+	rt := server.tools["contacts_update"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("contacts_update: expected 'id' to be required")
+	}
+
+	// Verify contacts_delete requires id
+	rt = server.tools["contacts_delete"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("contacts_delete: expected 'id' to be required")
+	}
+}
+
+func TestContactsUpdateHandler(t *testing.T) {
+	t.Run("nil contacts returns error", func(t *testing.T) {
+		handler := makeContactsUpdateHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "contact-1"})
+		if err == nil {
+			t.Error("expected error for nil contacts")
+		}
+	})
+
+	t.Run("empty id returns error", func(t *testing.T) {
+		handler := makeContactsUpdateHandler(ToolsConfig{
+			Contacts: fastmail.NewContactsClient("http://localhost", "user", "pass"),
+		})
+		_, err := handler(t.Context(), map[string]any{})
+		if err == nil {
+			t.Error("expected error for empty id")
+		}
+	})
+}
+
+func TestContactsDeleteHandler(t *testing.T) {
+	t.Run("nil contacts returns error", func(t *testing.T) {
+		handler := makeContactsDeleteHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "contact-1"})
+		if err == nil {
+			t.Error("expected error for nil contacts")
+		}
+	})
+
+	t.Run("empty id returns error", func(t *testing.T) {
+		handler := makeContactsDeleteHandler(ToolsConfig{
+			Contacts: fastmail.NewContactsClient("http://localhost", "user", "pass"),
+		})
+		_, err := handler(t.Context(), map[string]any{})
+		if err == nil {
+			t.Error("expected error for empty id")
+		}
+	})
 }
 
 func TestCalendarTools(t *testing.T) {
@@ -176,12 +248,209 @@ func TestCalendarTools(t *testing.T) {
 	RegisterMailTools(server, ToolsConfig{})
 
 	// Verify calendar tools
-	if _, ok := server.tools["calendar_events"]; !ok {
-		t.Error("calendar_events tool not found")
+	calendarTools := []string{
+		"calendar_events",
+		"calendar_create",
+		"calendar_get",
+		"calendar_update",
+		"calendar_delete",
+		"calendar_calendars",
 	}
-	if _, ok := server.tools["calendar_create"]; !ok {
-		t.Error("calendar_create tool not found")
+	for _, name := range calendarTools {
+		if _, ok := server.tools[name]; !ok {
+			t.Errorf("%s tool not found", name)
+		}
 	}
+
+	// Verify calendar_get requires id
+	rt := server.tools["calendar_get"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("calendar_get: expected 'id' to be required")
+	}
+
+	// Verify calendar_update requires id
+	rt = server.tools["calendar_update"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("calendar_update: expected 'id' to be required")
+	}
+
+	// Verify calendar_delete requires id
+	rt = server.tools["calendar_delete"]
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("calendar_delete: expected 'id' to be required")
+	}
+}
+
+func TestCalendarGetHandler(t *testing.T) {
+	t.Run("nil calendar returns error", func(t *testing.T) {
+		handler := makeCalendarGetHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err == nil {
+			t.Error("expected error for nil calendar")
+		}
+	})
+
+	t.Run("empty id returns error", func(t *testing.T) {
+		handler := makeCalendarGetHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				GetEventFunc: func(_ context.Context, _ string) (*fastmail.Event, error) {
+					return &fastmail.Event{}, nil
+				},
+			},
+		})
+		_, err := handler(t.Context(), map[string]any{})
+		if err == nil {
+			t.Error("expected error for empty id")
+		}
+	})
+
+	t.Run("returns event", func(t *testing.T) {
+		now := time.Now()
+		handler := makeCalendarGetHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				GetEventFunc: func(_ context.Context, id string) (*fastmail.Event, error) {
+					return &fastmail.Event{
+						ID:      id,
+						Summary: "Test Event",
+						Start:   now,
+						End:     now.Add(time.Hour),
+					}, nil
+				},
+			},
+		})
+		result, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		evt, ok := result.(*Event)
+		if !ok {
+			t.Fatalf("expected *Event, got %T", result)
+		}
+		if evt.ID != "evt-1" {
+			t.Errorf("expected ID 'evt-1', got %q", evt.ID)
+		}
+	})
+}
+
+func TestCalendarDeleteHandler(t *testing.T) {
+	t.Run("nil calendar returns error", func(t *testing.T) {
+		handler := makeCalendarDeleteHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err == nil {
+			t.Error("expected error for nil calendar")
+		}
+	})
+
+	t.Run("deletes event", func(t *testing.T) {
+		deletedID := ""
+		handler := makeCalendarDeleteHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				DeleteEventFunc: func(_ context.Context, id string) error {
+					deletedID = id
+					return nil
+				},
+			},
+		})
+		result, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if deletedID != "evt-1" {
+			t.Errorf("expected delete of 'evt-1', got %q", deletedID)
+		}
+		m, ok := result.(map[string]any)
+		if !ok {
+			t.Fatalf("expected map, got %T", result)
+		}
+		if m["status"] != "deleted" {
+			t.Errorf("expected status 'deleted', got %v", m["status"])
+		}
+	})
+}
+
+func TestCalendarUpdateHandler(t *testing.T) {
+	t.Run("nil calendar returns error", func(t *testing.T) {
+		handler := makeCalendarUpdateHandler(ToolsConfig{})
+		_, err := handler(t.Context(), map[string]any{"id": "evt-1"})
+		if err == nil {
+			t.Error("expected error for nil calendar")
+		}
+	})
+
+	t.Run("updates event fields", func(t *testing.T) {
+		now := time.Now()
+		var updatedEvent *fastmail.Event
+		handler := makeCalendarUpdateHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				GetEventFunc: func(_ context.Context, id string) (*fastmail.Event, error) {
+					return &fastmail.Event{
+						ID:      id,
+						Summary: "Original",
+						Start:   now,
+						End:     now.Add(time.Hour),
+					}, nil
+				},
+				UpdateEventFunc: func(_ context.Context, event *fastmail.Event) error {
+					updatedEvent = event
+					return nil
+				},
+			},
+		})
+		result, err := handler(t.Context(), map[string]any{
+			"id":      "evt-1",
+			"summary": "Updated Title",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if updatedEvent == nil {
+			t.Fatal("UpdateEventFunc was not called")
+		}
+		if updatedEvent.Summary != "Updated Title" {
+			t.Errorf("expected summary 'Updated Title', got %q", updatedEvent.Summary)
+		}
+		m, ok := result.(map[string]any)
+		if !ok {
+			t.Fatalf("expected map, got %T", result)
+		}
+		if m["status"] != "updated" {
+			t.Errorf("expected status 'updated', got %v", m["status"])
+		}
+	})
+}
+
+func TestCalendarCalendarsHandler(t *testing.T) {
+	t.Run("nil calendar returns error", func(t *testing.T) {
+		handler := makeCalendarCalendarsHandler(ToolsConfig{})
+		_, err := handler(t.Context(), nil)
+		if err == nil {
+			t.Error("expected error for nil calendar")
+		}
+	})
+
+	t.Run("returns calendars", func(t *testing.T) {
+		handler := makeCalendarCalendarsHandler(ToolsConfig{
+			Calendar: &CalendarAdapter{
+				ListCalendarsFunc: func(_ context.Context) ([]fastmail.Calendar, error) {
+					return []fastmail.Calendar{
+						{ID: "cal-1", Name: "Personal"},
+						{ID: "cal-2", Name: "Work"},
+					}, nil
+				},
+			},
+		})
+		result, err := handler(t.Context(), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		cals, ok := result.([]fastmail.Calendar)
+		if !ok {
+			t.Fatalf("expected []fastmail.Calendar, got %T", result)
+		}
+		if len(cals) != 2 {
+			t.Errorf("expected 2 calendars, got %d", len(cals))
+		}
+	})
 }
 
 func TestHelperFunctions(t *testing.T) {
@@ -190,35 +459,32 @@ func TestHelperFunctions(t *testing.T) {
 			"name": "test",
 		}
 
-		if got := getStringArg(args, "name", "default"); got != "test" {
-			t.Errorf("expected 'test', got %q", got)
-		}
-		if got := getStringArg(args, "missing", "default"); got != "default" {
-			t.Errorf("expected 'default', got %q", got)
-		}
+		got, err := getStringArg(args, "name", "default")
+		require.NoError(t, err)
+		assert.Equal(t, "test", got)
+
+		got, err = getStringArg(args, "missing", "default")
+		require.NoError(t, err)
+		assert.Equal(t, "default", got)
 	})
 
 	t.Run("getUint64Arg", func(t *testing.T) {
 		args := map[string]any{
-			"float":   float64(42),
-			"int":     int(42),
-			"int64":   int64(42),
-			"uint64":  uint64(42),
-			"invalid": "not a number",
+			"float":  float64(42),
+			"int":    int(42),
+			"int64":  int64(42),
+			"uint64": uint64(42),
 		}
 
 		for _, key := range []string{"float", "int", "int64", "uint64"} {
-			if got := getUint64Arg(args, key, 0); got != 42 {
-				t.Errorf("getUint64Arg(%s): expected 42, got %d", key, got)
-			}
+			got, err := getUint64Arg(args, key, 0)
+			require.NoError(t, err)
+			assert.Equal(t, uint64(42), got, "getUint64Arg(%s)", key)
 		}
 
-		if got := getUint64Arg(args, "invalid", 10); got != 10 {
-			t.Errorf("expected default 10, got %d", got)
-		}
-		if got := getUint64Arg(args, "missing", 10); got != 10 {
-			t.Errorf("expected default 10, got %d", got)
-		}
+		got, err := getUint64Arg(args, "missing", 10)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(10), got)
 	})
 
 	t.Run("getBoolArg", func(t *testing.T) {
@@ -227,15 +493,17 @@ func TestHelperFunctions(t *testing.T) {
 			"false": false,
 		}
 
-		if got := getBoolArg(args, "true", false); !got {
-			t.Error("expected true")
-		}
-		if got := getBoolArg(args, "false", true); got {
-			t.Error("expected false")
-		}
-		if got := getBoolArg(args, "missing", true); !got {
-			t.Error("expected default true")
-		}
+		got, err := getBoolArg(args, "true", false)
+		require.NoError(t, err)
+		assert.True(t, got)
+
+		got, err = getBoolArg(args, "false", true)
+		require.NoError(t, err)
+		assert.False(t, got)
+
+		got, err = getBoolArg(args, "missing", true)
+		require.NoError(t, err)
+		assert.True(t, got)
 	})
 
 	t.Run("getStringSliceArg", func(t *testing.T) {
@@ -244,15 +512,133 @@ func TestHelperFunctions(t *testing.T) {
 			"anys":    []any{"c", "d"},
 		}
 
-		if got := getStringSliceArg(args, "strings"); len(got) != 2 || got[0] != "a" {
-			t.Errorf("expected [a b], got %v", got)
-		}
-		if got := getStringSliceArg(args, "anys"); len(got) != 2 || got[0] != "c" {
-			t.Errorf("expected [c d], got %v", got)
-		}
-		if got := getStringSliceArg(args, "missing"); got != nil {
-			t.Errorf("expected nil, got %v", got)
-		}
+		got, err := getStringSliceArg(args, "strings")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, got)
+
+		got, err = getStringSliceArg(args, "anys")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"c", "d"}, got)
+
+		got, err = getStringSliceArg(args, "missing")
+		require.NoError(t, err)
+		assert.Nil(t, got)
+	})
+}
+
+func TestHelperFunctions_TypeMismatch(t *testing.T) {
+	t.Run("getStringArg returns error on wrong type", func(t *testing.T) {
+		args := map[string]any{"id": 12345}
+		val, err := getStringArg(args, "id", "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a string")
+		assert.Contains(t, err.Error(), "id")
+		assert.Empty(t, val)
+	})
+
+	t.Run("getStringArg returns default when key absent", func(t *testing.T) {
+		args := map[string]any{}
+		val, err := getStringArg(args, "id", "default")
+		require.NoError(t, err)
+		assert.Equal(t, "default", val)
+	})
+
+	t.Run("getStringArg returns value when type correct", func(t *testing.T) {
+		args := map[string]any{"id": "abc"}
+		val, err := getStringArg(args, "id", "")
+		require.NoError(t, err)
+		assert.Equal(t, "abc", val)
+	})
+
+	t.Run("getUint64Arg returns error on wrong type", func(t *testing.T) {
+		args := map[string]any{"limit": "not-a-number"}
+		val, err := getUint64Arg(args, "limit", 10)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a number")
+		assert.Contains(t, err.Error(), "limit")
+		assert.Equal(t, uint64(0), val)
+	})
+
+	t.Run("getUint64Arg returns default when key absent", func(t *testing.T) {
+		args := map[string]any{}
+		val, err := getUint64Arg(args, "limit", 10)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(10), val)
+	})
+
+	t.Run("getUint64Arg returns value for float64", func(t *testing.T) {
+		args := map[string]any{"limit": float64(42)}
+		val, err := getUint64Arg(args, "limit", 0)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(42), val)
+	})
+
+	t.Run("getUint64Arg returns error on negative float64", func(t *testing.T) {
+		args := map[string]any{"limit": float64(-1)}
+		val, err := getUint64Arg(args, "limit", 10)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be non-negative")
+		assert.Equal(t, uint64(0), val)
+	})
+
+	t.Run("getBoolArg returns error on wrong type", func(t *testing.T) {
+		args := map[string]any{"flag": "true"}
+		val, err := getBoolArg(args, "flag", false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a boolean")
+		assert.Contains(t, err.Error(), "flag")
+		assert.False(t, val)
+	})
+
+	t.Run("getBoolArg returns default when key absent", func(t *testing.T) {
+		args := map[string]any{}
+		val, err := getBoolArg(args, "flag", true)
+		require.NoError(t, err)
+		assert.True(t, val)
+	})
+
+	t.Run("getBoolArg returns value when type correct", func(t *testing.T) {
+		args := map[string]any{"flag": true}
+		val, err := getBoolArg(args, "flag", false)
+		require.NoError(t, err)
+		assert.True(t, val)
+	})
+
+	t.Run("getStringSliceArg returns error on non-string elements", func(t *testing.T) {
+		args := map[string]any{"tags": []any{"ok", 123, "also-ok"}}
+		val, err := getStringSliceArg(args, "tags")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must contain only strings")
+		assert.Nil(t, val)
+	})
+
+	t.Run("getStringSliceArg returns error on wrong type", func(t *testing.T) {
+		args := map[string]any{"tags": "not-a-slice"}
+		val, err := getStringSliceArg(args, "tags")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be an array")
+		assert.Nil(t, val)
+	})
+
+	t.Run("getStringSliceArg returns nil when key absent", func(t *testing.T) {
+		args := map[string]any{}
+		val, err := getStringSliceArg(args, "tags")
+		require.NoError(t, err)
+		assert.Nil(t, val)
+	})
+
+	t.Run("getStringSliceArg returns value for []string", func(t *testing.T) {
+		args := map[string]any{"tags": []string{"a", "b"}}
+		val, err := getStringSliceArg(args, "tags")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, val)
+	})
+
+	t.Run("getStringSliceArg returns value for []any with strings", func(t *testing.T) {
+		args := map[string]any{"tags": []any{"c", "d"}}
+		val, err := getStringSliceArg(args, "tags")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"c", "d"}, val)
 	})
 }
 
@@ -319,6 +705,103 @@ func TestEventConversion(t *testing.T) {
 	if mcp.Status != "CONFIRMED" {
 		t.Errorf("expected Status 'CONFIRMED', got %q", mcp.Status)
 	}
+}
+
+func TestRegisterResources(t *testing.T) {
+	server := NewServer("test", "1.0")
+	registry := NewResourceRegistry(nil) // nil client is fine for registration test
+
+	RegisterResources(server, registry)
+
+	// Verify all resources from registry are registered with the server
+	registryResources := registry.List()
+	if len(registryResources) == 0 {
+		t.Fatal("expected registry to have default resources")
+	}
+
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+
+	for _, res := range registryResources {
+		if _, ok := server.resources[res.URI]; !ok {
+			t.Errorf("expected resource %q to be registered with server", res.URI)
+		}
+		if _, ok := server.readers[res.URI]; !ok {
+			t.Errorf("expected reader for %q to be registered with server", res.URI)
+		}
+	}
+
+	// Verify resource count matches
+	if len(server.resources) != len(registryResources) {
+		t.Errorf("expected %d resources, got %d", len(registryResources), len(server.resources))
+	}
+}
+
+func TestRegisterResourcesWithCalendar(t *testing.T) {
+	server := NewServer("test", "1.0")
+	cal := &CalendarAdapter{
+		ListCalendarsFunc: func(_ context.Context) ([]fastmail.Calendar, error) {
+			return nil, nil
+		},
+	}
+	registry := NewResourceRegistry(nil, WithCalendarAdapter(cal))
+
+	RegisterResources(server, registry)
+
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+
+	// Should have all default resources including calendar ones
+	if _, ok := server.resources["fastmail://calendars"]; !ok {
+		t.Error("expected fastmail://calendars resource to be registered")
+	}
+}
+
+func TestMailFlagHandler_MutualExclusivity(t *testing.T) {
+	handler := makeMailFlagHandler(ToolsConfig{})
+
+	t.Run("read and unread are mutually exclusive", func(t *testing.T) {
+		_, err := handler(t.Context(), map[string]any{
+			"id":     "msg-1",
+			"read":   true,
+			"unread": true,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "mutually exclusive")
+	})
+
+	t.Run("flagged and unflagged are mutually exclusive", func(t *testing.T) {
+		_, err := handler(t.Context(), map[string]any{
+			"id":        "msg-1",
+			"flagged":   true,
+			"unflagged": true,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "mutually exclusive")
+	})
+
+	t.Run("read alone passes validation", func(t *testing.T) {
+		// With nil client, handler will panic past validation when calling SetKeywords.
+		// A panic (not an error) confirms validation was passed successfully.
+		assert.Panics(t, func() {
+			_, _ = handler(t.Context(), map[string]any{
+				"id":   "msg-1",
+				"read": true,
+			})
+		})
+	})
+
+	t.Run("read and flagged together pass validation", func(t *testing.T) {
+		// With nil client, handler will panic past validation when calling SetKeywords.
+		// A panic (not an error) confirms validation was passed successfully.
+		assert.Panics(t, func() {
+			_, _ = handler(t.Context(), map[string]any{
+				"id":      "msg-1",
+				"read":    true,
+				"flagged": true,
+			})
+		})
+	})
 }
 
 func TestParseAddresses(t *testing.T) {

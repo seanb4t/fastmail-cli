@@ -36,14 +36,28 @@ type registeredResource struct {
 // ResourceRegistry manages MCP resources.
 type ResourceRegistry struct {
 	client    *fastmail.Client
+	calendar  *CalendarAdapter
 	resources []registeredResource
 	templates []ResourceTemplate
 }
 
+// ResourceRegistryOption configures a ResourceRegistry.
+type ResourceRegistryOption func(*ResourceRegistry)
+
+// WithCalendarAdapter sets the calendar adapter for calendar resources.
+func WithCalendarAdapter(cal *CalendarAdapter) ResourceRegistryOption {
+	return func(r *ResourceRegistry) {
+		r.calendar = cal
+	}
+}
+
 // NewResourceRegistry creates a new resource registry with default resources.
-func NewResourceRegistry(client *fastmail.Client) *ResourceRegistry {
+func NewResourceRegistry(client *fastmail.Client, opts ...ResourceRegistryOption) *ResourceRegistry {
 	r := &ResourceRegistry{
 		client: client,
+	}
+	for _, opt := range opts {
+		opt(r)
 	}
 	r.registerDefaults()
 	return r
@@ -158,6 +172,38 @@ func (r *ResourceRegistry) registerDefaults() {
 			WithMimeType("text/plain"),
 		r.handleMaskedEmails,
 	)
+
+	// fastmail://mailboxes - Mailbox list
+	r.register(
+		*NewResource("fastmail://mailboxes", "Mailboxes").
+			WithDescription("List of email mailboxes (folders) with message counts").
+			WithMimeType("text/plain"),
+		r.handleMailboxes,
+	)
+
+	// fastmail://identities - Identity list
+	r.register(
+		*NewResource("fastmail://identities", "Identities").
+			WithDescription("List of sender identities").
+			WithMimeType("text/plain"),
+		r.handleIdentities,
+	)
+
+	// fastmail://vacation - Vacation status
+	r.register(
+		*NewResource("fastmail://vacation", "Vacation Status").
+			WithDescription("Current vacation/auto-reply settings").
+			WithMimeType("text/plain"),
+		r.handleVacation,
+	)
+
+	// fastmail://calendars - Calendar list
+	r.register(
+		*NewResource("fastmail://calendars", "Calendars").
+			WithDescription("List of calendars").
+			WithMimeType("text/plain"),
+		r.handleCalendars,
+	)
 }
 
 // handleInbox returns recent inbox messages.
@@ -205,24 +251,14 @@ func (r *ResourceRegistry) handleMail(ctx context.Context, params map[string]str
 
 // handleContacts returns the contact list.
 func (r *ResourceRegistry) handleContacts(_ context.Context, _ map[string]string) (*ResourceContent, error) {
-	// Contacts require CardDAV client which may not be configured via JMAP
-	// Return informative message if not available
-	return &ResourceContent{
-		URI:      "fastmail://contacts",
-		MimeType: "text/plain",
-		Text:     "Contacts access requires CardDAV configuration. Use the contacts_list tool instead.",
-	}, nil
+	// Contacts require CardDAV client which is not configured via JMAP
+	return nil, oops.Errorf("contacts access requires CardDAV configuration")
 }
 
 // handleCalendarToday returns today's calendar events.
 func (r *ResourceRegistry) handleCalendarToday(_ context.Context, _ map[string]string) (*ResourceContent, error) {
-	// Calendar service requires DAV client which may not be configured
-	// Return informative message if not available
-	return &ResourceContent{
-		URI:      "fastmail://calendar/today",
-		MimeType: "text/plain",
-		Text:     "Calendar access requires CalDAV configuration. No events available.",
-	}, nil
+	// Calendar service requires DAV client which is not configured
+	return nil, oops.Errorf("calendar access requires CalDAV configuration")
 }
 
 // handleMaskedEmails returns the masked email list.
@@ -239,6 +275,86 @@ func (r *ResourceRegistry) handleMaskedEmails(ctx context.Context, _ map[string]
 	content := formatMaskedEmailList(maskedEmails)
 	return &ResourceContent{
 		URI:      "fastmail://masked-emails",
+		MimeType: "text/plain",
+		Text:     content,
+	}, nil
+}
+
+// handleMailboxes returns the mailbox list.
+func (r *ResourceRegistry) handleMailboxes(ctx context.Context, _ map[string]string) (*ResourceContent, error) {
+	if r.client == nil {
+		return nil, oops.Errorf("client not configured")
+	}
+
+	mailboxes, err := r.client.Mailbox().List(ctx)
+	if err != nil {
+		return nil, oops.Wrapf(err, "listing mailboxes")
+	}
+
+	content := formatMailboxList(mailboxes)
+	return &ResourceContent{
+		URI:      "fastmail://mailboxes",
+		MimeType: "text/plain",
+		Text:     content,
+	}, nil
+}
+
+// handleIdentities returns the identity list.
+func (r *ResourceRegistry) handleIdentities(ctx context.Context, _ map[string]string) (*ResourceContent, error) {
+	if r.client == nil {
+		return nil, oops.Errorf("client not configured")
+	}
+
+	identities, err := r.client.Identity().List(ctx)
+	if err != nil {
+		return nil, oops.Wrapf(err, "listing identities")
+	}
+
+	content := formatIdentityList(identities)
+	return &ResourceContent{
+		URI:      "fastmail://identities",
+		MimeType: "text/plain",
+		Text:     content,
+	}, nil
+}
+
+// handleVacation returns the vacation status.
+func (r *ResourceRegistry) handleVacation(ctx context.Context, _ map[string]string) (*ResourceContent, error) {
+	if r.client == nil {
+		return nil, oops.Errorf("client not configured")
+	}
+
+	vacation, err := r.client.Vacation().Get(ctx)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting vacation status")
+	}
+
+	content := formatVacation(vacation)
+	return &ResourceContent{
+		URI:      "fastmail://vacation",
+		MimeType: "text/plain",
+		Text:     content,
+	}, nil
+}
+
+// handleCalendars returns the calendar list.
+func (r *ResourceRegistry) handleCalendars(ctx context.Context, _ map[string]string) (*ResourceContent, error) {
+	if r.calendar == nil || r.calendar.ListCalendarsFunc == nil {
+		return &ResourceContent{
+			URI:      "fastmail://calendars",
+			MimeType: "text/plain",
+			Text:     "Calendar access requires CalDAV configuration. Use the calendar_list tool instead.",
+		}, nil
+	}
+
+	calendars, err := r.calendar.ListCalendarsFunc(ctx)
+	if err != nil {
+		return nil, oops.Wrapf(err, "listing calendars")
+	}
+
+	content := formatCalendarList(calendars)
+	return &ResourceContent{
+		URI:      "fastmail://calendars",
 		MimeType: "text/plain",
 		Text:     content,
 	}, nil
@@ -366,6 +482,112 @@ func formatMaskedEmailList(maskedEmails []fastmail.MaskedEmail) string {
 		}
 		if me.LastMessageAt != "" {
 			b.WriteString(fmt.Sprintf("- Last Message: %s\n", me.LastMessageAt))
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+// formatMailboxList formats a list of mailboxes for LLM readability.
+func formatMailboxList(mailboxes []fastmail.Mailbox) string {
+	if len(mailboxes) == 0 {
+		return "No mailboxes found."
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# Mailboxes (%d total)\n\n", len(mailboxes)))
+
+	for i, mb := range mailboxes {
+		b.WriteString(fmt.Sprintf("## %d. %s\n", i+1, mb.Name))
+		b.WriteString(fmt.Sprintf("- ID: %s\n", mb.ID))
+		if mb.Role != "" {
+			b.WriteString(fmt.Sprintf("- Role: %s\n", mb.Role))
+		}
+		b.WriteString(fmt.Sprintf("- Total: %d emails, %d unread\n", mb.TotalEmails, mb.UnreadEmails))
+		if mb.ParentID != "" {
+			b.WriteString(fmt.Sprintf("- Parent: %s\n", mb.ParentID))
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+// formatIdentityList formats a list of identities for LLM readability.
+func formatIdentityList(identities []fastmail.Identity) string {
+	if len(identities) == 0 {
+		return "No identities found."
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# Identities (%d total)\n\n", len(identities)))
+
+	for i, id := range identities {
+		b.WriteString(fmt.Sprintf("## %d. %s\n", i+1, id.Name))
+		b.WriteString(fmt.Sprintf("- ID: %s\n", id.ID))
+		b.WriteString(fmt.Sprintf("- Email: %s\n", id.Email))
+		if id.TextSignature != "" {
+			b.WriteString(fmt.Sprintf("- Signature: %s\n", truncate(id.TextSignature, 80)))
+		}
+		if id.MayDelete {
+			b.WriteString("- May delete: yes\n")
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+// formatVacation formats a vacation response for LLM readability.
+func formatVacation(v *fastmail.Vacation) string {
+	var b strings.Builder
+	b.WriteString("# Vacation Response\n\n")
+
+	if v.IsEnabled {
+		b.WriteString("- Status: **enabled**\n")
+	} else {
+		b.WriteString("- Status: disabled\n")
+	}
+	if v.Subject != "" {
+		b.WriteString(fmt.Sprintf("- Subject: %s\n", v.Subject))
+	}
+	if v.FromDate != "" {
+		b.WriteString(fmt.Sprintf("- From: %s\n", v.FromDate))
+	}
+	if v.ToDate != "" {
+		b.WriteString(fmt.Sprintf("- To: %s\n", v.ToDate))
+	}
+	if v.TextBody != "" {
+		b.WriteString(fmt.Sprintf("\n## Message\n\n%s\n", v.TextBody))
+	}
+
+	return b.String()
+}
+
+// formatCalendarList formats a list of calendars for LLM readability.
+func formatCalendarList(calendars []fastmail.Calendar) string {
+	if len(calendars) == 0 {
+		return "No calendars found."
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# Calendars (%d total)\n\n", len(calendars)))
+
+	for i, cal := range calendars {
+		b.WriteString(fmt.Sprintf("## %d. %s\n", i+1, cal.Name))
+		b.WriteString(fmt.Sprintf("- ID: %s\n", cal.ID))
+		if cal.Description != "" {
+			b.WriteString(fmt.Sprintf("- Description: %s\n", cal.Description))
+		}
+		if cal.Color != "" {
+			b.WriteString(fmt.Sprintf("- Color: %s\n", cal.Color))
+		}
+		if cal.IsDefaultCalendar {
+			b.WriteString("- Default: yes\n")
+		}
+		if cal.ReadOnly {
+			b.WriteString("- Read-only: yes\n")
 		}
 		b.WriteString("\n")
 	}

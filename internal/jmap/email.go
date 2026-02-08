@@ -24,9 +24,10 @@ type Email struct {
 	References []string       `json:"references,omitempty"`
 
 	// Body content
-	BodyValues map[string]BodyValue `json:"bodyValues,omitempty"`
-	TextBody   []BodyPart           `json:"textBody,omitempty"`
-	HTMLBody   []BodyPart           `json:"htmlBody,omitempty"`
+	BodyValues  map[string]BodyValue `json:"bodyValues,omitempty"`
+	TextBody    []BodyPart           `json:"textBody,omitempty"`
+	HTMLBody    []BodyPart           `json:"htmlBody,omitempty"`
+	Attachments []Attachment         `json:"attachments,omitempty"`
 }
 
 // EmailAddress represents a JMAP email address.
@@ -46,6 +47,14 @@ type BodyValue struct {
 type BodyPart struct {
 	PartID string `json:"partId,omitempty"`
 	Type   string `json:"type,omitempty"`
+}
+
+// Attachment represents a JMAP email attachment.
+type Attachment struct {
+	BlobID string `json:"blobId"`
+	Type   string `json:"type"`
+	Name   string `json:"name,omitempty"`
+	Size   uint64 `json:"size"`
 }
 
 // Comparator specifies sort order for queries.

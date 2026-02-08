@@ -48,6 +48,14 @@ type CalendarService struct {
 	dav *dav.Client
 }
 
+// NewCalendarService creates a new calendar service.
+// The endpoint should be the CalDAV URL (e.g., https://caldav.fastmail.com/dav/).
+func NewCalendarService(endpoint, username, password string) *CalendarService {
+	return &CalendarService{
+		dav: dav.NewClient(endpoint, username, password),
+	}
+}
+
 // ListCalendars returns all calendars for the user.
 func (s *CalendarService) ListCalendars(ctx context.Context) ([]Calendar, error) {
 	calendars, err := s.dav.ListCalendars(ctx)
