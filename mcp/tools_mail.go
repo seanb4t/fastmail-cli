@@ -34,6 +34,7 @@ func RegisterMailTools(s *Server, cfg ToolsConfig) {
 	registerCalendarTools(s, cfg)
 	registerVacationTools(s, cfg)
 	registerAccountTools(s, cfg)
+	registerIdentityTools(s, cfg)
 }
 
 // registerMailTools registers email tools.
@@ -59,6 +60,7 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 		NewTool("mail_search", "Search emails by text query").
 			WithProperty("query", "string", "Search query (e.g., 'from:alice subject:meeting')").
 			WithProperty("limit", "integer", "Maximum number of results (default: 10)").
+			WithProperty("snippets", "boolean", "Include highlighted search snippets with results (default: false)").
 			WithRequired("query"),
 		makeMailSearchHandler(cfg),
 	)
@@ -159,6 +161,15 @@ func makeMailSearchHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("query is required")
 		}
 		limit := getUint64Arg(args, "limit", 10)
+		snippets := getBoolArg(args, "snippets", false)
+
+		if snippets {
+			results, err := cfg.Client.Mail().SearchWithSnippets(ctx, query, limit)
+			if err != nil {
+				return nil, oops.Wrapf(err, "searching emails with snippets")
+			}
+			return convertSearchResultsToMCP(results), nil
+		}
 
 		emails, err := cfg.Client.Mail().Search(ctx, query, limit)
 		if err != nil {
@@ -916,4 +927,43 @@ func convertEmailsToMCP(emails []fastmail.Email) []*Email {
 		result[i] = convertEmailToMCP(&emails[i])
 	}
 	return result
+}
+
+// SearchResultEmail is the MCP representation of a search result with snippets.
+type SearchResultEmail struct {
+	ID             string   `json:"id"`
+	ThreadID       string   `json:"thread_id"`
+	Subject        string   `json:"subject"`
+	Preview        string   `json:"preview"`
+	ReceivedAt     string   `json:"received_at"`
+	Size           uint64   `json:"size"`
+	IsRead         bool     `json:"is_read"`
+	IsFlagged      bool     `json:"is_flagged"`
+	Folders        []string `json:"folders"`
+	SubjectSnippet string   `json:"subject_snippet,omitempty"`
+	PreviewSnippet string   `json:"preview_snippet,omitempty"`
+}
+
+func convertSearchResultToMCP(r *fastmail.SearchResult) *SearchResultEmail {
+	return &SearchResultEmail{
+		ID:             r.Email.ID,
+		ThreadID:       r.Email.ThreadID,
+		Subject:        r.Email.Subject,
+		Preview:        r.Email.Preview,
+		ReceivedAt:     r.Email.ReceivedAt.Format(time.RFC3339),
+		Size:           r.Email.Size,
+		IsRead:         r.Email.IsRead(),
+		IsFlagged:      r.Email.IsFlagged(),
+		Folders:        r.Email.MailboxIDs,
+		SubjectSnippet: r.SubjectSnippet,
+		PreviewSnippet: r.PreviewSnippet,
+	}
+}
+
+func convertSearchResultsToMCP(results []fastmail.SearchResult) []*SearchResultEmail {
+	mcpResults := make([]*SearchResultEmail, len(results))
+	for i := range results {
+		mcpResults[i] = convertSearchResultToMCP(&results[i])
+	}
+	return mcpResults
 }

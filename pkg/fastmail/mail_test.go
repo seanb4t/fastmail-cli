@@ -1163,3 +1163,229 @@ func TestMailService_GetThread_NotFound(t *testing.T) {
 	assert.Nil(t, emails)
 	assert.Contains(t, err.Error(), "not found")
 }
+
+func TestMailService_SearchWithSnippets(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+
+		// Should have 3 method calls: Email/query, Email/get, SearchSnippet/get
+		require.Len(t, methodCalls, 3)
+
+		firstCall := methodCalls[0].([]any)
+		assert.Equal(t, "Email/query", firstCall[0])
+
+		secondCall := methodCalls[1].([]any)
+		assert.Equal(t, "Email/get", secondCall[0])
+
+		thirdCall := methodCalls[2].([]any)
+		assert.Equal(t, "SearchSnippet/get", thirdCall[0])
+
+		// Verify the filter in Email/query
+		queryArgs := firstCall[1].(map[string]any)
+		queryFilter := queryArgs["filter"].(map[string]any)
+		assert.Equal(t, "meeting notes", queryFilter["text"])
+
+		// Verify the filter in SearchSnippet/get matches
+		snippetArgs := thirdCall[1].(map[string]any)
+		snippetFilter := snippetArgs["filter"].(map[string]any)
+		assert.Equal(t, "meeting notes", snippetFilter["text"])
+
+		// Verify back-references
+		getArgs := secondCall[1].(map[string]any)
+		idsRef := getArgs["#ids"].(map[string]any)
+		assert.Equal(t, "0", idsRef["resultOf"])
+		assert.Equal(t, "Email/query", idsRef["name"])
+		assert.Equal(t, "/ids", idsRef["path"])
+
+		emailIDsRef := snippetArgs["#emailIds"].(map[string]any)
+		assert.Equal(t, "0", emailIDsRef["resultOf"])
+		assert.Equal(t, "Email/query", emailIDsRef["name"])
+		assert.Equal(t, "/ids", emailIDsRef["path"])
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/query", {
+					"accountId": "acc1",
+					"queryState": "q1",
+					"canCalculateChanges": true,
+					"position": 0,
+					"ids": ["email-1", "email-2"],
+					"total": 2
+				}, "0"],
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [
+						{
+							"id": "email-1",
+							"threadId": "t1",
+							"subject": "Meeting Notes",
+							"preview": "Notes from today's meeting about project X",
+							"receivedAt": "2024-01-15T10:30:00Z",
+							"size": 2000,
+							"keywords": {"$seen": true},
+							"mailboxIds": {"mb1": true}
+						},
+						{
+							"id": "email-2",
+							"threadId": "t2",
+							"subject": "Another Email",
+							"preview": "Some meeting content here",
+							"receivedAt": "2024-01-14T09:00:00Z",
+							"size": 1500,
+							"keywords": {},
+							"mailboxIds": {"mb1": true}
+						}
+					],
+					"notFound": []
+				}, "1"],
+				["SearchSnippet/get", {
+					"accountId": "acc1",
+					"list": [
+						{
+							"emailId": "email-1",
+							"subject": "<mark>Meeting</mark> <mark>Notes</mark>",
+							"preview": "<mark>Notes</mark> from today's <mark>meeting</mark> about project X"
+						},
+						{
+							"emailId": "email-2",
+							"subject": null,
+							"preview": "Some <mark>meeting</mark> content here"
+						}
+					],
+					"notFound": []
+				}, "2"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	results, err := client.Mail().SearchWithSnippets(ctx, "meeting notes", 10)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	// First result: has both subject and preview snippets
+	assert.Equal(t, "email-1", results[0].Email.ID)
+	assert.Equal(t, "Meeting Notes", results[0].Email.Subject)
+	assert.Equal(t, "<mark>Meeting</mark> <mark>Notes</mark>", results[0].SubjectSnippet)
+	assert.Equal(t, "<mark>Notes</mark> from today's <mark>meeting</mark> about project X", results[0].PreviewSnippet)
+
+	// Second result: subject snippet is null (empty string), preview has snippet
+	assert.Equal(t, "email-2", results[1].Email.ID)
+	assert.Equal(t, "", results[1].SubjectSnippet)
+	assert.Equal(t, "Some <mark>meeting</mark> content here", results[1].PreviewSnippet)
+}
+
+func TestMailService_SearchWithSnippets_NoResults(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/query", {
+					"accountId": "acc1",
+					"queryState": "q1",
+					"canCalculateChanges": true,
+					"position": 0,
+					"ids": [],
+					"total": 0
+				}, "0"],
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [],
+					"notFound": []
+				}, "1"],
+				["SearchSnippet/get", {
+					"accountId": "acc1",
+					"list": [],
+					"notFound": []
+				}, "2"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	results, err := client.Mail().SearchWithSnippets(ctx, "nonexistent query", 10)
+	require.NoError(t, err)
+	assert.Empty(t, results)
+}
+
+func TestMailService_SearchWithSnippets_SnippetError(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/query", {
+					"accountId": "acc1",
+					"queryState": "q1",
+					"canCalculateChanges": true,
+					"position": 0,
+					"ids": ["email-1"],
+					"total": 1
+				}, "0"],
+				["Email/get", {
+					"accountId": "acc1",
+					"state": "e1",
+					"list": [
+						{
+							"id": "email-1",
+							"threadId": "t1",
+							"subject": "Test",
+							"preview": "Test preview",
+							"receivedAt": "2024-01-15T10:30:00Z",
+							"size": 100,
+							"keywords": {},
+							"mailboxIds": {"mb1": true}
+						}
+					],
+					"notFound": []
+				}, "1"],
+				["error", {
+					"type": "serverFail",
+					"description": "snippet generation failed"
+				}, "2"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	results, err := client.Mail().SearchWithSnippets(ctx, "test", 10)
+	assert.Error(t, err)
+	assert.Nil(t, results)
+	assert.Contains(t, err.Error(), "snippet")
+}

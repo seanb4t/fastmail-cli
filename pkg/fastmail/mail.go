@@ -124,6 +124,13 @@ func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 	return &emails[0], nil
 }
 
+// SearchResult pairs an email with its search snippet highlights.
+type SearchResult struct {
+	Email          Email
+	SubjectSnippet string
+	PreviewSnippet string
+}
+
 // Search returns emails matching a query string.
 // The query uses JMAP filter syntax (e.g., "from:alice subject:meeting").
 func (s *MailService) Search(ctx context.Context, query string, limit uint64) ([]Email, error) {
@@ -185,6 +192,115 @@ func (s *MailService) Search(ctx context.Context, query string, limit uint64) ([
 	}
 
 	return convertEmails(getResp.List), nil
+}
+
+// SearchWithSnippets returns emails matching a query string along with highlighted snippets.
+// It chains Email/query, Email/get, and SearchSnippet/get in a single JMAP request.
+func (s *MailService) SearchWithSnippets(ctx context.Context, query string, limit uint64) ([]SearchResult, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the filter (shared between Email/query and SearchSnippet/get)
+	filter := map[string]any{
+		"text": query,
+	}
+
+	// 1. Email/query
+	queryArgs := map[string]any{
+		"accountId": accountID,
+		"filter":    filter,
+		"sort": []jmap.Comparator{
+			{Property: "receivedAt", IsAscending: false},
+		},
+	}
+	if limit > 0 {
+		queryArgs["limit"] = limit
+	}
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	queryCallID := req.Invoke("Email/query", queryArgs)
+
+	// 2. Email/get with back-reference to query result IDs
+	getBuilder := jmap.NewEmailGet(accountID).
+		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+	getArgs := getBuilder.Build()
+	getArgs["#ids"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
+	req.Invoke("Email/get", getArgs)
+
+	// 3. SearchSnippet/get with back-reference to query result IDs and same filter
+	snippetArgs := jmap.NewSearchSnippetGet(accountID).
+		Filter(filter).
+		Build()
+	snippetArgs["#emailIds"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
+	req.Invoke("SearchSnippet/get", snippetArgs)
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	// Check query result
+	queryResult, err := resp.GetResult(queryCallID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting query result")
+	}
+	if queryResult.IsError() {
+		return nil, oops.Errorf("query failed: %s", queryResult.Error())
+	}
+
+	// Get email list
+	getResult, err := resp.GetResult("1")
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting email list result")
+	}
+	if getResult.IsError() {
+		return nil, oops.Errorf("get failed: %s", getResult.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := getResult.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding email response")
+	}
+
+	// Get snippet list
+	snippetResult, err := resp.GetResult("2")
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting snippet result")
+	}
+	if snippetResult.IsError() {
+		return nil, oops.Errorf("snippet get failed: %s", snippetResult.Error())
+	}
+
+	var snippetResp jmap.SearchSnippetGetResponse
+	if err := snippetResult.Decode(&snippetResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding snippet response")
+	}
+
+	// Build a map of emailID -> snippet for fast lookup
+	snippetMap := make(map[string]jmap.SearchSnippet, len(snippetResp.List))
+	for _, s := range snippetResp.List {
+		snippetMap[s.EmailID] = s
+	}
+
+	// Combine emails with their snippets
+	emails := convertEmails(getResp.List)
+	results := make([]SearchResult, len(emails))
+	for i, email := range emails {
+		result := SearchResult{Email: email}
+		if snippet, ok := snippetMap[email.ID]; ok {
+			if snippet.Subject != nil {
+				result.SubjectSnippet = *snippet.Subject
+			}
+			if snippet.Preview != nil {
+				result.PreviewSnippet = *snippet.Preview
+			}
+		}
+		results[i] = result
+	}
+
+	return results, nil
 }
 
 // Move moves an email to a different folder.

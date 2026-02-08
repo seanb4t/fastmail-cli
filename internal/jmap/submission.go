@@ -170,15 +170,16 @@ type EmailSubmissionSetResponse struct {
 }
 
 // Identity represents a JMAP Identity object (sender identity).
+// See: https://datatracker.ietf.org/doc/html/rfc8620#section-6 (via submission).
 type Identity struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Email         string `json:"email"`
-	ReplyTo       string `json:"replyTo,omitempty"`
-	BCC           string `json:"bcc,omitempty"`
-	TextSignature string `json:"textSignature,omitempty"`
-	HTMLSignature string `json:"htmlSignature,omitempty"`
-	MayDelete     bool   `json:"mayDelete"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Email         string         `json:"email"`
+	ReplyTo       []EmailAddress `json:"replyTo,omitempty"`
+	Bcc           []EmailAddress `json:"bcc,omitempty"`
+	TextSignature string         `json:"textSignature,omitempty"`
+	HTMLSignature string         `json:"htmlSignature,omitempty"`
+	MayDelete     bool           `json:"mayDelete"`
 }
 
 // IdentityGetBuilder builds arguments for Identity/get.
@@ -229,4 +230,48 @@ type IdentityGetResponse struct {
 	State     string     `json:"state"`
 	List      []Identity `json:"list"`
 	NotFound  []string   `json:"notFound"`
+}
+
+// IdentitySetBuilder builds arguments for Identity/set.
+// Per JMAP spec, Identity only supports get and set (not create/destroy);
+// the server manages identity creation and deletion.
+type IdentitySetBuilder struct {
+	accountID string
+	update    map[string]map[string]any
+}
+
+// NewIdentitySet creates a new Identity/set builder.
+func NewIdentitySet(accountID string) *IdentitySetBuilder {
+	return &IdentitySetBuilder{
+		accountID: accountID,
+		update:    make(map[string]map[string]any),
+	}
+}
+
+// Update adds an identity to be updated with the given patch.
+func (b *IdentitySetBuilder) Update(identityID string, patch map[string]any) *IdentitySetBuilder {
+	b.update[identityID] = patch
+	return b
+}
+
+// Build returns the arguments map for Request.Invoke.
+func (b *IdentitySetBuilder) Build() map[string]any {
+	args := map[string]any{
+		"accountId": b.accountID,
+	}
+
+	if len(b.update) > 0 {
+		args["update"] = b.update
+	}
+
+	return args
+}
+
+// IdentitySetResponse represents the response from Identity/set.
+type IdentitySetResponse struct {
+	AccountID  string                 `json:"accountId"`
+	OldState   string                 `json:"oldState"`
+	NewState   string                 `json:"newState"`
+	Updated    map[string]any         `json:"updated"`
+	NotUpdated map[string]MethodError `json:"notUpdated"`
 }

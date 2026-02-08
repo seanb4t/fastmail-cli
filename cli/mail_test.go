@@ -436,3 +436,24 @@ func TestMailThread_HelpShowsUsage(t *testing.T) {
 		t.Error("expected 'THREAD_ID' in thread help usage")
 	}
 }
+
+func TestMailSearch_HelpShowsSnippetsFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "search", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail search --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "snippets") {
+		t.Error("expected 'snippets' flag in search help")
+	}
+	if !strings.Contains(output, "-s") {
+		t.Error("expected '-s' shorthand in search help")
+	}
+}

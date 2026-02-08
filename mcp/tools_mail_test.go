@@ -45,6 +45,8 @@ func TestRegisterMailTools(t *testing.T) {
 		"vacation_status",
 		"vacation_set",
 		"quota_get",
+		"identity_list",
+		"identity_set",
 	}
 
 	for _, name := range expectedTools {
@@ -648,5 +650,96 @@ func TestMailThreadTool_RequiresThreadID(t *testing.T) {
 	}
 	if err.Error() != "thread_id is required" {
 		t.Errorf("expected 'thread_id is required', got %q", err.Error())
+	}
+}
+
+func TestMailSearchTool_HasSnippetsProperty(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_search"]
+	if !ok {
+		t.Fatal("mail_search tool not found")
+	}
+
+	if _, ok := rt.tool.InputSchema.Properties["snippets"]; !ok {
+		t.Error("expected 'snippets' property in mail_search input schema")
+	}
+}
+
+func TestMailSearchTool_SnippetsNotRequired(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_search"]
+	if !ok {
+		t.Fatal("mail_search tool not found")
+	}
+
+	// snippets should NOT be in the required list
+	for _, req := range rt.tool.InputSchema.Required {
+		if req == "snippets" {
+			t.Error("'snippets' should not be required")
+		}
+	}
+}
+
+func TestSearchResultConversion(t *testing.T) {
+	now := time.Now()
+	results := []fastmail.SearchResult{
+		{
+			Email: fastmail.Email{
+				ID:         "email-1",
+				ThreadID:   "thread-1",
+				Subject:    "Meeting Notes",
+				Preview:    "Notes from today",
+				ReceivedAt: now,
+				Size:       1024,
+				Keywords:   []string{"$seen"},
+				MailboxIDs: []string{"inbox"},
+			},
+			SubjectSnippet: "<mark>Meeting</mark> Notes",
+			PreviewSnippet: "<mark>Notes</mark> from today",
+		},
+		{
+			Email: fastmail.Email{
+				ID:         "email-2",
+				ThreadID:   "thread-2",
+				Subject:    "Other Email",
+				Preview:    "Other content",
+				ReceivedAt: now,
+				Size:       512,
+				Keywords:   []string{},
+				MailboxIDs: []string{"inbox"},
+			},
+			SubjectSnippet: "",
+			PreviewSnippet: "Other <mark>content</mark>",
+		},
+	}
+
+	mcpResults := convertSearchResultsToMCP(results)
+
+	if len(mcpResults) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(mcpResults))
+	}
+
+	if mcpResults[0].ID != "email-1" {
+		t.Errorf("expected ID 'email-1', got %q", mcpResults[0].ID)
+	}
+	if mcpResults[0].SubjectSnippet != "<mark>Meeting</mark> Notes" {
+		t.Errorf("expected SubjectSnippet '<mark>Meeting</mark> Notes', got %q", mcpResults[0].SubjectSnippet)
+	}
+	if mcpResults[0].PreviewSnippet != "<mark>Notes</mark> from today" {
+		t.Errorf("expected PreviewSnippet '<mark>Notes</mark> from today', got %q", mcpResults[0].PreviewSnippet)
+	}
+	if !mcpResults[0].IsRead {
+		t.Error("expected IsRead to be true")
+	}
+
+	if mcpResults[1].SubjectSnippet != "" {
+		t.Errorf("expected empty SubjectSnippet, got %q", mcpResults[1].SubjectSnippet)
+	}
+	if mcpResults[1].PreviewSnippet != "Other <mark>content</mark>" {
+		t.Errorf("expected PreviewSnippet 'Other <mark>content</mark>', got %q", mcpResults[1].PreviewSnippet)
 	}
 }

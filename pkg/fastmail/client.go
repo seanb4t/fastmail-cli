@@ -74,6 +74,13 @@ func (c *Client) Quota() *QuotaService {
 	}
 }
 
+// Identity returns the identity service for sender identity operations.
+func (c *Client) Identity() *IdentityService {
+	return &IdentityService{
+		client: c,
+	}
+}
+
 // accountID returns the current account ID, fetching session if needed.
 func (c *Client) getAccountID(ctx context.Context) (string, error) {
 	if c.accountID != "" {

@@ -302,6 +302,7 @@ func newMailShowCommand() *cobra.Command {
 // newMailSearchCommand creates the mail search command.
 func newMailSearchCommand() *cobra.Command {
 	var limit uint64
+	var snippets bool
 
 	cmd := &cobra.Command{
 		Use:   "search QUERY",
@@ -321,6 +322,14 @@ func newMailSearchCommand() *cobra.Command {
 				return fmt.Errorf("connecting: %w", err)
 			}
 
+			if snippets {
+				results, err := client.Mail().SearchWithSnippets(ctx, query, limit)
+				if err != nil {
+					return fmt.Errorf("searching emails: %w", err)
+				}
+				return outputSearchResults(cmd, results)
+			}
+
 			emails, err := client.Mail().Search(ctx, query, limit)
 			if err != nil {
 				return fmt.Errorf("searching emails: %w", err)
@@ -331,8 +340,61 @@ func newMailSearchCommand() *cobra.Command {
 	}
 
 	cmd.Flags().Uint64VarP(&limit, "limit", "n", 10, "maximum emails to return")
+	cmd.Flags().BoolVarP(&snippets, "snippets", "s", false, "include highlighted search snippets")
 
 	return cmd
+}
+
+// outputSearchResults writes search results with snippets to output.
+func outputSearchResults(cmd *cobra.Command, results []fastmail.SearchResult) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		type jsonResult struct {
+			ID             string `json:"id"`
+			Subject        string `json:"subject"`
+			Preview        string `json:"preview"`
+			SubjectSnippet string `json:"subject_snippet,omitempty"`
+			PreviewSnippet string `json:"preview_snippet,omitempty"`
+		}
+
+		out := make([]jsonResult, len(results))
+		for i, r := range results {
+			out[i] = jsonResult{
+				ID:             r.Email.ID,
+				Subject:        r.Email.Subject,
+				Preview:        r.Email.Preview,
+				SubjectSnippet: r.SubjectSnippet,
+				PreviewSnippet: r.PreviewSnippet,
+			}
+		}
+
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+
+	w := cmd.OutOrStdout()
+	for _, r := range results {
+		status := ""
+		if r.Email.IsRead() {
+			status = " [read]"
+		}
+		if r.Email.IsFlagged() {
+			status += " [flagged]"
+		}
+		_, _ = fmt.Fprintf(w, "%s  %s%s\n", r.Email.ID, r.Email.Subject, status)
+		if r.SubjectSnippet != "" {
+			_, _ = fmt.Fprintf(w, "  Match: %s\n", r.SubjectSnippet)
+		}
+		if r.PreviewSnippet != "" {
+			_, _ = fmt.Fprintf(w, "  Match: %s\n", r.PreviewSnippet)
+		}
+	}
+
+	return nil
 }
 
 // newMailMoveCommand creates the mail move command.
