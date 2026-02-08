@@ -28,6 +28,7 @@ type CalendarAdapter struct {
 // RegisterMailTools registers all mail-related tools on the server.
 func RegisterMailTools(s *Server, cfg ToolsConfig) {
 	registerMailTools(s, cfg)
+	registerMailboxTools(s, cfg)
 	registerMaskedEmailTools(s, cfg)
 	registerContactTools(s, cfg)
 	registerCalendarTools(s, cfg)
@@ -97,6 +98,15 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 			WithProperty("id", "string", "The email ID").
 			WithRequired("id"),
 		makeMailDeleteHandler(cfg),
+	)
+
+	// mail_flag - Set or remove flags/keywords on an email
+	s.RegisterTool(
+		NewTool("mail_flag", "Set or remove flags/keywords on an email").
+			WithProperty("id", "string", "The email ID").
+			WithProperty("keywords", "object", "Keywords to set/remove. Keys are keyword names, values are true (set) or false (remove)").
+			WithRequired("id", "keywords"),
+		makeMailFlagHandler(cfg),
 	)
 }
 
@@ -251,6 +261,45 @@ func makeMailDeleteHandler(cfg ToolsConfig) ToolHandler {
 		return map[string]any{
 			"id":     id,
 			"status": "deleted",
+		}, nil
+	}
+}
+
+func makeMailFlagHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		keywordsRaw, ok := args["keywords"]
+		if !ok {
+			return nil, oops.Errorf("keywords is required")
+		}
+		keywordsMap, ok := keywordsRaw.(map[string]any)
+		if !ok {
+			return nil, oops.Errorf("keywords must be an object")
+		}
+		if len(keywordsMap) == 0 {
+			return nil, oops.Errorf("keywords is required")
+		}
+
+		var actions []fastmail.KeywordAction
+		for keyword, val := range keywordsMap {
+			b, ok := val.(bool)
+			if !ok {
+				return nil, oops.Errorf("keyword %q value must be boolean, got %T", keyword, val)
+			}
+			actions = append(actions, fastmail.KeywordAction{Keyword: keyword, Set: b})
+		}
+
+		if err := cfg.Client.Mail().SetKeywords(ctx, id, actions); err != nil {
+			return nil, oops.Wrapf(err, "setting keywords")
+		}
+
+		return map[string]any{
+			"id":     id,
+			"status": "updated",
 		}, nil
 	}
 }

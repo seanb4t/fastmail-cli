@@ -43,5 +43,6 @@ lefthook.local.yaml
 .runtime/
 .claude/
 .beads/
+.serena/
 .logs/
 .worktrees/

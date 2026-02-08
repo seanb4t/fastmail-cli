@@ -24,6 +24,11 @@ func TestRegisterMailTools(t *testing.T) {
 		"mail_reply",
 		"mail_move",
 		"mail_delete",
+		"mail_flag",
+		"mailbox_list",
+		"mailbox_create",
+		"mailbox_rename",
+		"mailbox_delete",
 		"masked_email_list",
 		"masked_email_create",
 		"masked_email_enable",
@@ -476,5 +481,120 @@ func TestContactsDelete_NilClient(t *testing.T) {
 	}
 	if err.Error() != "contacts client not configured" {
 		t.Errorf("expected 'contacts client not configured', got %q", err.Error())
+	}
+}
+
+func TestMailFlagTool(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_flag"]
+	if !ok {
+		t.Fatal("mail_flag tool not found")
+	}
+
+	// Verify tool definition
+	if rt.tool.Name != "mail_flag" {
+		t.Errorf("expected name %q, got %q", "mail_flag", rt.tool.Name)
+	}
+
+	if rt.tool.Description != "Set or remove flags/keywords on an email" {
+		t.Errorf("unexpected description: %s", rt.tool.Description)
+	}
+
+	// Verify input schema has expected properties
+	if _, ok := rt.tool.InputSchema.Properties["id"]; !ok {
+		t.Error("expected 'id' property in input schema")
+	}
+	if _, ok := rt.tool.InputSchema.Properties["keywords"]; !ok {
+		t.Error("expected 'keywords' property in input schema")
+	}
+
+	// Verify required fields
+	if !slices.Contains(rt.tool.InputSchema.Required, "id") {
+		t.Error("expected 'id' to be required")
+	}
+	if !slices.Contains(rt.tool.InputSchema.Required, "keywords") {
+		t.Error("expected 'keywords' to be required")
+	}
+}
+
+func TestMailFlagTool_RequiresID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_flag"]
+	if !ok {
+		t.Fatal("mail_flag tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{
+		"keywords": map[string]any{"$seen": true},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+	if err.Error() != "id is required" {
+		t.Errorf("expected 'id is required', got %q", err.Error())
+	}
+}
+
+func TestMailFlagTool_RequiresKeywords(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_flag"]
+	if !ok {
+		t.Fatal("mail_flag tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{
+		"id": "email-123",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing keywords")
+	}
+	if err.Error() != "keywords is required" {
+		t.Errorf("expected 'keywords is required', got %q", err.Error())
+	}
+}
+
+func TestMailFlagTool_RejectsNonBooleanValues(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_flag"]
+	if !ok {
+		t.Fatal("mail_flag tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{
+		"id":       "email-123",
+		"keywords": map[string]any{"$seen": "yes"},
+	})
+	if err == nil {
+		t.Fatal("expected error for non-boolean keyword value")
+	}
+}
+
+func TestMailFlagTool_RejectsEmptyKeywords(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_flag"]
+	if !ok {
+		t.Fatal("mail_flag tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{
+		"id":       "email-123",
+		"keywords": map[string]any{},
+	})
+	if err == nil {
+		t.Fatal("expected error for empty keywords")
 	}
 }

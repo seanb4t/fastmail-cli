@@ -20,6 +20,9 @@ type Mailbox struct {
 	// Empty for top-level mailboxes.
 	ParentID string
 
+	// SortOrder is the server-assigned sort position for this mailbox.
+	SortOrder uint32
+
 	// TotalEmails is the count of all emails in this mailbox.
 	TotalEmails uint64
 

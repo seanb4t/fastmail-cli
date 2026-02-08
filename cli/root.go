@@ -44,6 +44,7 @@ func NewRootCommand() *RootCommand {
 	// Add subcommands
 	root.cmd.AddCommand(newAuthCommand())
 	root.cmd.AddCommand(newMailCommand())
+	root.cmd.AddCommand(newMailboxCommand())
 	root.cmd.AddCommand(newMaskedEmailCommand())
 	root.cmd.AddCommand(newContactsCommand())
 	root.cmd.AddCommand(newCalendarCommand())

@@ -427,6 +427,69 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 	return emails
 }
 
+// KeywordAction represents a keyword change to apply to an email.
+type KeywordAction struct {
+	// Keyword is the JMAP keyword (e.g., "$seen", "$flagged").
+	Keyword string
+	// Set is true to add the keyword, false to remove it.
+	Set bool
+}
+
+// SetKeywords sets or removes keywords on an email.
+func (s *MailService) SetKeywords(ctx context.Context, id string, actions []KeywordAction) error {
+	if len(actions) == 0 {
+		return oops.Errorf("no keyword actions provided")
+	}
+
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Build keyword patches
+	patch := make(map[string]any, len(actions))
+	for _, a := range actions {
+		if a.Set {
+			patch["keywords/"+a.Keyword] = true
+		} else {
+			patch["keywords/"+a.Keyword] = nil
+		}
+	}
+
+	// Build Email/set request
+	setBuilder := jmap.NewEmailSet(accountID).Update(id, patch)
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	callID := req.Invoke("Email/set", setBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return oops.Errorf("set failed: %s", result.Error())
+	}
+
+	// Check for update errors
+	var setResp struct {
+		NotUpdated map[string]jmap.MethodError `json:"notUpdated"`
+	}
+	if err := result.Decode(&setResp); err != nil {
+		return oops.Wrapf(err, "decoding response")
+	}
+
+	if errInfo, ok := setResp.NotUpdated[id]; ok {
+		return oops.Errorf("failed to update keywords: %s", errInfo.Error())
+	}
+
+	return nil
+}
+
 // SendOptions specifies options for sending an email.
 type SendOptions struct {
 	To      []EmailAddress

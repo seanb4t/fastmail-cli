@@ -44,6 +44,8 @@ type CreateMaskedEmailOptions struct {
 }
 
 // List returns all masked emails.
+//
+//nolint:dupl // JMAP service pattern - structural similarity with other services is intentional
 func (s *MaskedEmailService) List(ctx context.Context) ([]MaskedEmail, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {

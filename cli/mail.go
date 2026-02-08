@@ -29,6 +29,7 @@ func newMailCommand() *cobra.Command {
 	cmd.AddCommand(newMailSearchCommand())
 	cmd.AddCommand(newMailMoveCommand())
 	cmd.AddCommand(newMailDeleteCommand())
+	cmd.AddCommand(newMailFlagCommand())
 
 	return cmd
 }
@@ -462,5 +463,111 @@ func outputDeleteResult(cmd *cobra.Command, emailID string) error {
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email %s deleted\n", emailID)
+	return nil
+}
+
+// newMailFlagCommand creates the mail flag command.
+func newMailFlagCommand() *cobra.Command {
+	var (
+		markRead   bool
+		markUnread bool
+		star       bool
+		unstar     bool
+		flagKeys   []string
+		unflagKeys []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "flag EMAIL_ID",
+		Short: "Set or remove flags on an email",
+		Long:  "Set or remove keyword flags (read, starred, custom) on an email.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			if markRead && markUnread {
+				return fmt.Errorf("cannot specify both --read and --unread")
+			}
+			if star && unstar {
+				return fmt.Errorf("cannot specify both --star and --unstar")
+			}
+
+			actions := buildKeywordActions(markRead, markUnread, star, unstar, flagKeys, unflagKeys)
+			if len(actions) == 0 {
+				return fmt.Errorf("at least one flag option is required (--read, --unread, --star, --unstar, --flag, --unflag)")
+			}
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().SetKeywords(ctx, emailID, actions); err != nil {
+				return fmt.Errorf("setting flags: %w", err)
+			}
+
+			return outputFlagResult(cmd, emailID, actions)
+		},
+	}
+
+	cmd.Flags().BoolVar(&markRead, "read", false, "mark as read ($seen)")
+	cmd.Flags().BoolVar(&markUnread, "unread", false, "mark as unread (remove $seen)")
+	cmd.Flags().BoolVar(&star, "star", false, "star the email ($flagged)")
+	cmd.Flags().BoolVar(&unstar, "unstar", false, "unstar the email (remove $flagged)")
+	cmd.Flags().StringArrayVar(&flagKeys, "flag", nil, "add a custom keyword")
+	cmd.Flags().StringArrayVar(&unflagKeys, "unflag", nil, "remove a custom keyword")
+
+	return cmd
+}
+
+// buildKeywordActions converts CLI flags into KeywordAction slice.
+func buildKeywordActions(read, unread, star, unstar bool, flagKeys, unflagKeys []string) []fastmail.KeywordAction {
+	var actions []fastmail.KeywordAction
+
+	if read {
+		actions = append(actions, fastmail.KeywordAction{Keyword: fastmail.KeywordSeen, Set: true})
+	}
+	if unread {
+		actions = append(actions, fastmail.KeywordAction{Keyword: fastmail.KeywordSeen, Set: false})
+	}
+	if star {
+		actions = append(actions, fastmail.KeywordAction{Keyword: fastmail.KeywordFlagged, Set: true})
+	}
+	if unstar {
+		actions = append(actions, fastmail.KeywordAction{Keyword: fastmail.KeywordFlagged, Set: false})
+	}
+	for _, key := range flagKeys {
+		actions = append(actions, fastmail.KeywordAction{Keyword: key, Set: true})
+	}
+	for _, key := range unflagKeys {
+		actions = append(actions, fastmail.KeywordAction{Keyword: key, Set: false})
+	}
+
+	return actions
+}
+
+// outputFlagResult writes the flag result to output.
+func outputFlagResult(cmd *cobra.Command, emailID string, actions []fastmail.KeywordAction) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		keywords := make(map[string]bool, len(actions))
+		for _, a := range actions {
+			keywords[a.Keyword] = a.Set
+		}
+		result := map[string]any{"id": emailID, "status": "updated", "keywords": keywords}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email %s flags updated\n", emailID)
 	return nil
 }

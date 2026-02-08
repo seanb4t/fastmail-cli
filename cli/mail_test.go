@@ -21,7 +21,7 @@ func TestMailHelp_ShowsSubcommands(t *testing.T) {
 	output := buf.String()
 
 	// Should show all subcommands
-	subcommands := []string{"list", "send", "reply", "show", "search", "move", "delete"}
+	subcommands := []string{"list", "send", "reply", "show", "search", "move", "delete", "flag"}
 	for _, sub := range subcommands {
 		if !strings.Contains(output, sub) {
 			t.Errorf("expected %q subcommand in help, got: %q", sub, output)
@@ -266,6 +266,82 @@ func TestMailDelete_RequiresID(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "arg") {
 		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailFlag_RequiresID(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag without ID should error")
+	}
+
+	if !strings.Contains(err.Error(), "arg") {
+		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailFlag_HelpShowsFlags(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail flag --help should not error: %v", err)
+	}
+
+	output := buf.String()
+
+	// Should show all flag options
+	expectedFlags := []string{"read", "unread", "star", "unstar", "flag", "unflag"}
+	for _, f := range expectedFlags {
+		if !strings.Contains(output, f) {
+			t.Errorf("expected %q flag in help, got: %q", f, output)
+		}
+	}
+}
+
+func TestMailFlag_HelpShowsUsage(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail flag --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "EMAIL_ID") {
+		t.Error("expected 'EMAIL_ID' in flag help usage")
+	}
+}
+
+func TestMailHelp_ShowsFlagSubcommand(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "flag") {
+		t.Error("expected 'flag' subcommand in mail help")
 	}
 }
 
