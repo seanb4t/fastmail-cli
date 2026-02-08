@@ -320,3 +320,37 @@ func TestMailDelete_RequiresForce(t *testing.T) {
 		t.Errorf("expected 'force' in error, got: %v", err)
 	}
 }
+
+func TestMailFlag_MutuallyExclusiveReadUnread(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag", "email-123", "--read", "--unread"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag with --read and --unread should error")
+	}
+
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected 'mutually exclusive' in error, got: %v", err)
+	}
+}
+
+func TestMailFlag_MutuallyExclusiveFlaggedUnflagged(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "flag", "email-123", "--flagged", "--unflagged"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail flag with --flagged and --unflagged should error")
+	}
+
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected 'mutually exclusive' in error, got: %v", err)
+	}
+}

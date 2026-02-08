@@ -2,7 +2,9 @@ package fastmail
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -226,10 +228,34 @@ func (s *MailService) Search(ctx context.Context, query string, limit uint64) ([
 
 // SearchWithFilter returns emails matching a structured JMAP filter.
 // The filter is a pre-built JMAP FilterCondition map (e.g., {"from": "alice", "subject": "meeting"}).
+// If the filter contains an "inMailbox" value that is a folder name (not an ID),
+// it is resolved to the actual mailbox ID via resolveMailbox.
 func (s *MailService) SearchWithFilter(ctx context.Context, filter map[string]any, limit uint64) ([]Email, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Resolve inMailbox folder name to ID if present
+	if inMailbox, ok := filter["inMailbox"].(string); ok {
+		resolvedID, resolveErr := s.resolveMailbox(ctx, accountID, inMailbox)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		filter["inMailbox"] = resolvedID
+	}
+
+	// Also check nested conditions for compound filters
+	if conditions, ok := filter["conditions"].([]map[string]any); ok {
+		for _, cond := range conditions {
+			if inMailbox, ok := cond["inMailbox"].(string); ok {
+				resolvedID, resolveErr := s.resolveMailbox(ctx, accountID, inMailbox)
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				cond["inMailbox"] = resolvedID
+			}
+		}
 	}
 
 	queryArgs := map[string]any{
@@ -541,7 +567,11 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 	for i, je := range jmapEmails {
 		var receivedAt time.Time
 		if je.ReceivedAt != "" {
-			receivedAt, _ = time.Parse(time.RFC3339, je.ReceivedAt)
+			var parseErr error
+			receivedAt, parseErr = time.Parse(time.RFC3339, je.ReceivedAt)
+			if parseErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: invalid date %q for email %s\n", je.ReceivedAt, je.ID)
+			}
 		}
 
 		mailboxIDs := make([]string, 0, len(je.MailboxIDs))

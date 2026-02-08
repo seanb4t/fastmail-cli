@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/seanb4t/fastmail-cli/internal/jmap"
 )
 
 // JMAP method name constants used in test assertions and mock handlers.
@@ -500,6 +502,188 @@ func TestMailService_SearchWithFilter(t *testing.T) {
 	assert.Equal(t, "email-filtered", emails[0].ID)
 	assert.Equal(t, "Project Update", emails[0].Subject)
 	assert.Equal(t, "t2", emails[0].ThreadID)
+}
+
+func TestMailService_SearchWithFilter_ResolvesInMailbox(t *testing.T) {
+	requestCount := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+		requestCount++
+
+		if methodName == testMethodMailboxGet {
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-inbox", "name": "Inbox", "role": "inbox"},
+							{"id": "mb-sent", "name": "Sent", "role": "sent"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+			return
+		}
+
+		// Email/query — verify inMailbox was resolved to the ID
+		if methodName == "Email/query" {
+			args := firstCall[1].(map[string]any)
+			filter := args["filter"].(map[string]any)
+			assert.Equal(t, "mb-inbox", filter["inMailbox"], "inMailbox should be resolved to mailbox ID")
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/query", {
+						"accountId": "acc1",
+						"queryState": "q1",
+						"canCalculateChanges": true,
+						"position": 0,
+						"ids": ["email-in-inbox"],
+						"total": 1
+					}, "0"],
+					["Email/get", {
+						"accountId": "acc1",
+						"state": "e1",
+						"list": [
+							{
+								"id": "email-in-inbox",
+								"threadId": "t1",
+								"subject": "Inbox Email",
+								"preview": "Found in inbox",
+								"receivedAt": "2024-01-15T10:30:00Z",
+								"size": 1000,
+								"keywords": {},
+								"mailboxIds": {"mb-inbox": true}
+							}
+						],
+						"notFound": []
+					}, "1"]
+				]
+			}`))
+			return
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	// Filter with folder name "Inbox" (not an ID) — should be resolved
+	filter := map[string]any{
+		"inMailbox": "Inbox",
+	}
+	emails, err := client.Mail().SearchWithFilter(ctx, filter, 10)
+	require.NoError(t, err)
+	require.Len(t, emails, 1)
+	assert.Equal(t, "email-in-inbox", emails[0].ID)
+}
+
+func TestMailService_SearchWithFilter_ResolvesInMailboxInConditions(t *testing.T) {
+	requestCount := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+		requestCount++
+
+		if methodName == testMethodMailboxGet {
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-drafts", "name": "Drafts", "role": "drafts"},
+							{"id": "mb-inbox", "name": "Inbox", "role": "inbox"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+			return
+		}
+
+		if methodName == "Email/query" {
+			args := firstCall[1].(map[string]any)
+			filter := args["filter"].(map[string]any)
+			conditions := filter["conditions"].([]any)
+			// Find the condition with inMailbox and verify it was resolved
+			for _, c := range conditions {
+				cond := c.(map[string]any)
+				if inMb, ok := cond["inMailbox"]; ok {
+					assert.Equal(t, "mb-drafts", inMb, "inMailbox in conditions should be resolved to ID")
+				}
+			}
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/query", {
+						"accountId": "acc1",
+						"queryState": "q1",
+						"canCalculateChanges": true,
+						"position": 0,
+						"ids": [],
+						"total": 0
+					}, "0"],
+					["Email/get", {
+						"accountId": "acc1",
+						"state": "e1",
+						"list": [],
+						"notFound": []
+					}, "1"]
+				]
+			}`))
+			return
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	// Compound filter with inMailbox in conditions (as produced by search.Parse("in:Drafts from:alice"))
+	filter := map[string]any{
+		"operator": "AND",
+		"conditions": []map[string]any{
+			{"inMailbox": "Drafts"},
+			{"from": "alice"},
+		},
+	}
+	emails, err := client.Mail().SearchWithFilter(ctx, filter, 10)
+	require.NoError(t, err)
+	assert.Empty(t, emails)
 }
 
 func TestMailService_Move(t *testing.T) {
@@ -1333,4 +1517,45 @@ func TestMailService_GetRaw_NoBlobID(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, body)
 	assert.Contains(t, err.Error(), "no blob ID")
+}
+
+func TestConvertEmails_InvalidReceivedAt(t *testing.T) {
+	emails := convertEmails([]jmap.Email{
+		{
+			ID:         "em1",
+			Subject:    "Valid date",
+			ReceivedAt: "2024-01-15T10:30:00Z",
+			Keywords:   map[string]bool{},
+			MailboxIDs: map[string]bool{"mb1": true},
+		},
+		{
+			ID:         "em2",
+			Subject:    "Invalid date",
+			ReceivedAt: "not-a-date",
+			Keywords:   map[string]bool{},
+			MailboxIDs: map[string]bool{"mb1": true},
+		},
+		{
+			ID:         "em3",
+			Subject:    "Empty date",
+			ReceivedAt: "",
+			Keywords:   map[string]bool{},
+			MailboxIDs: map[string]bool{"mb1": true},
+		},
+	})
+
+	require.Len(t, emails, 3)
+
+	// Valid date should parse correctly
+	assert.Equal(t, "em1", emails[0].ID)
+	assert.False(t, emails[0].ReceivedAt.IsZero())
+
+	// Invalid date should not panic, email should still be returned
+	assert.Equal(t, "em2", emails[1].ID)
+	assert.Equal(t, "Invalid date", emails[1].Subject)
+	assert.True(t, emails[1].ReceivedAt.IsZero())
+
+	// Empty date should result in zero time
+	assert.Equal(t, "em3", emails[2].ID)
+	assert.True(t, emails[2].ReceivedAt.IsZero())
 }

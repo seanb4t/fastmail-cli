@@ -505,6 +505,12 @@ func newMailFlagCommand() *cobra.Command {
 			if !read && !unread && !flagged && !unflagged {
 				return fmt.Errorf("at least one flag is required (--read, --unread, --flagged, --unflagged)")
 			}
+			if read && unread {
+				return fmt.Errorf("--read and --unread are mutually exclusive")
+			}
+			if flagged && unflagged {
+				return fmt.Errorf("--flagged and --unflagged are mutually exclusive")
+			}
 
 			keywords := make(map[string]bool)
 			if read {
