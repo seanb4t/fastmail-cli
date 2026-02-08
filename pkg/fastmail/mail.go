@@ -773,6 +773,82 @@ func (s *MailService) SetKeywords(ctx context.Context, id string, actions []Keyw
 	return nil
 }
 
+// ImportOptions specifies options for importing an RFC 5322 email message.
+type ImportOptions struct {
+	// Folder is the target mailbox folder name (default "Inbox").
+	Folder string
+	// Keywords are email keywords to set (e.g., "$seen", "$flagged").
+	Keywords map[string]bool
+}
+
+// Import imports an RFC 5322 email message (e.g., from an .eml file) into a mailbox.
+func (s *MailService) Import(ctx context.Context, data io.Reader, opts ImportOptions) (*ImportResult, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	folder := opts.Folder
+	if folder == "" {
+		folder = "Inbox"
+	}
+
+	mailboxID, err := s.resolveMailbox(ctx, accountID, folder)
+	if err != nil {
+		return nil, oops.Wrapf(err, "resolving folder %q", folder)
+	}
+
+	// Upload the raw message as a blob
+	blobID, _, err := s.UploadBlob(ctx, data, "message/rfc822")
+	if err != nil {
+		return nil, oops.Wrapf(err, "uploading message")
+	}
+
+	// Build Email/import request
+	importBuilder := jmap.NewEmailImport(accountID).
+		Import("imp1", blobID,
+			map[string]bool{mailboxID: true},
+			opts.Keywords,
+		)
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	callID := req.Invoke("Email/import", importBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return nil, oops.Errorf("import failed: %s", result.Error())
+	}
+
+	var importResp jmap.EmailImportResponse
+	if err := result.Decode(&importResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding import response")
+	}
+
+	if errInfo, ok := importResp.NotCreated["imp1"]; ok {
+		return nil, oops.Errorf("failed to import email: %s", errInfo.Error())
+	}
+
+	created, ok := importResp.Created["imp1"]
+	if !ok {
+		return nil, oops.Errorf("email not returned in created map")
+	}
+
+	return &ImportResult{
+		ID:       created.ID,
+		BlobID:   created.BlobID,
+		ThreadID: created.ThreadID,
+		Size:     created.Size,
+	}, nil
+}
+
 // SendOptions specifies options for sending an email.
 type SendOptions struct {
 	To      []EmailAddress

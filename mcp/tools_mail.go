@@ -142,6 +142,17 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 		makeMailDownloadHandler(cfg),
 	)
 
+	// mail_import - Import an RFC 5322 email message
+	s.RegisterTool(
+		NewTool("mail_import", "Import an RFC 5322 email message into a mailbox").
+			WithProperty("content", "string", "Base64-encoded RFC 5322 message content").
+			WithProperty("folder", "string", "Target mailbox folder (default: Inbox)").
+			WithProperty("seen", "boolean", "Mark as read (default: false)").
+			WithProperty("flagged", "boolean", "Mark as flagged (default: false)").
+			WithRequired("content"),
+		makeMailImportHandler(cfg),
+	)
+
 	// mail_upload - Upload a blob
 	s.RegisterTool(
 		NewTool("mail_upload", "Upload a blob for use in email drafts").
@@ -448,6 +459,47 @@ func makeMailDownloadHandler(cfg ToolsConfig) ToolHandler {
 			"size":     len(data),
 			"content":  base64Encode(data),
 			"encoding": "base64",
+		}, nil
+	}
+}
+
+func makeMailImportHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		content := getStringArg(args, "content", "")
+		if content == "" {
+			return nil, oops.Errorf("content is required")
+		}
+
+		data, err := base64Decode(content)
+		if err != nil {
+			return nil, oops.Wrapf(err, "decoding base64 content")
+		}
+
+		folder := getStringArg(args, "folder", "Inbox")
+		keywords := make(map[string]bool)
+		if getBoolArg(args, "seen", false) {
+			keywords["$seen"] = true
+		}
+		if getBoolArg(args, "flagged", false) {
+			keywords["$flagged"] = true
+		}
+
+		opts := fastmail.ImportOptions{
+			Folder:   folder,
+			Keywords: keywords,
+		}
+
+		result, err := cfg.Client.Mail().Import(ctx, bytes.NewReader(data), opts)
+		if err != nil {
+			return nil, oops.Wrapf(err, "importing email")
+		}
+
+		return map[string]any{
+			"id":        result.ID,
+			"blob_id":   result.BlobID,
+			"thread_id": result.ThreadID,
+			"size":      result.Size,
+			"status":    "imported",
 		}, nil
 	}
 }

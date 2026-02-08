@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1401,6 +1402,218 @@ func TestMailService_DownloadAttachment(t *testing.T) {
 	data, err := io.ReadAll(reader)
 	require.NoError(t, err)
 	assert.Equal(t, blobContent, string(data))
+}
+
+func TestMailService_Import(t *testing.T) {
+	requestCount := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		// Request 1: Mailbox/get (resolve folder)
+		// Request 2: Upload blob (different content-type)
+		// Request 3: Email/import
+		if r.Header.Get("Content-Type") == "message/rfc822" {
+			// Upload blob response
+			_, _ = w.Write([]byte(`{
+				"accountId": "acc1",
+				"blobId": "blob-uploaded-1",
+				"type": "message/rfc822",
+				"size": 500
+			}`))
+			return
+		}
+
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		switch methodName {
+		case testMethodMailboxGet:
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-inbox", "name": "Inbox", "role": "inbox"},
+							{"id": "mb-archive", "name": "Archive", "role": "archive"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case "Email/import":
+			args := firstCall[1].(map[string]any)
+			emails := args["emails"].(map[string]any)
+			imp1 := emails["imp1"].(map[string]any)
+
+			assert.Equal(t, "blob-uploaded-1", imp1["blobId"])
+			mbIDs := imp1["mailboxIds"].(map[string]any)
+			assert.True(t, mbIDs["mb-inbox"].(bool))
+
+			keywords := imp1["keywords"].(map[string]any)
+			assert.True(t, keywords["$seen"].(bool))
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/import", {
+						"accountId": "acc1",
+						"created": {
+							"imp1": {
+								"id": "email-imported-1",
+								"blobId": "blob-imported-1",
+								"threadId": "thread-imported-1",
+								"size": 500
+							}
+						}
+					}, "0"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"capabilities": {
+				"urn:ietf:params:jmap:core": {},
+				"urn:ietf:params:jmap:mail": {}
+			},
+			"accounts": {
+				"acc1": {
+					"name": "test@example.com",
+					"isPersonal": true,
+					"isReadOnly": false,
+					"accountCapabilities": {"urn:ietf:params:jmap:mail": {}}
+				}
+			},
+			"primaryAccounts": {"urn:ietf:params:jmap:mail": "acc1"},
+			"username": "test@example.com",
+			"apiUrl": "` + apiServer.URL + `",
+			"downloadUrl": "https://example.com/download",
+			"uploadUrl": "` + apiServer.URL + `/{accountId}/",
+			"eventSourceUrl": "https://example.com/events",
+			"state": "s1"
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	msgData := strings.NewReader("From: test@example.com\r\nSubject: Test\r\n\r\nBody")
+	opts := ImportOptions{
+		Folder:   "Inbox",
+		Keywords: map[string]bool{"$seen": true},
+	}
+
+	result, err := client.Mail().Import(ctx, msgData, opts)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.Equal(t, "email-imported-1", result.ID)
+	assert.Equal(t, "blob-imported-1", result.BlobID)
+	assert.Equal(t, "thread-imported-1", result.ThreadID)
+	assert.Equal(t, uint64(500), result.Size)
+}
+
+func TestMailService_Import_DefaultFolder(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Header.Get("Content-Type") == "message/rfc822" {
+			_, _ = w.Write([]byte(`{
+				"accountId": "acc1",
+				"blobId": "blob-up-2",
+				"type": "message/rfc822",
+				"size": 100
+			}`))
+			return
+		}
+
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		switch methodName {
+		case testMethodMailboxGet:
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [{"id": "mb-inbox", "name": "Inbox", "role": "inbox"}],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case "Email/import":
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/import", {
+						"accountId": "acc1",
+						"created": {
+							"imp1": {
+								"id": "email-imp-2",
+								"blobId": "blob-imp-2",
+								"threadId": "thread-imp-2",
+								"size": 100
+							}
+						}
+					}, "0"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"capabilities": {
+				"urn:ietf:params:jmap:core": {},
+				"urn:ietf:params:jmap:mail": {}
+			},
+			"accounts": {
+				"acc1": {
+					"name": "test@example.com",
+					"isPersonal": true,
+					"isReadOnly": false,
+					"accountCapabilities": {"urn:ietf:params:jmap:mail": {}}
+				}
+			},
+			"primaryAccounts": {"urn:ietf:params:jmap:mail": "acc1"},
+			"username": "test@example.com",
+			"apiUrl": "` + apiServer.URL + `",
+			"downloadUrl": "https://example.com/download",
+			"uploadUrl": "` + apiServer.URL + `/{accountId}/",
+			"eventSourceUrl": "https://example.com/events",
+			"state": "s1"
+		}`))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	// Empty folder should default to Inbox
+	result, err := client.Mail().Import(ctx, strings.NewReader("msg"), ImportOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "email-imp-2", result.ID)
 }
 
 func TestMailService_SearchWithSnippets(t *testing.T) {

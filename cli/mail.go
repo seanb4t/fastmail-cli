@@ -37,6 +37,7 @@ func newMailCommand() *cobra.Command {
 	cmd.AddCommand(newMailAttachmentsCommand())
 	cmd.AddCommand(newMailDownloadCommand())
 	cmd.AddCommand(newMailUploadCommand())
+	cmd.AddCommand(newMailImportCommand())
 
 	return cmd
 }
@@ -941,6 +942,96 @@ func outputUploadResult(cmd *cobra.Command, blobID string, size uint64, filename
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Uploaded: blob_id=%s size=%s\n", blobID, formatSize(size))
+	return nil
+}
+
+// newMailImportCommand creates the mail import command.
+func newMailImportCommand() *cobra.Command {
+	var (
+		folder  string
+		seen    bool
+		flagged bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "import FILE",
+		Short: "Import an RFC 5322 email message",
+		Long:  `Import an .eml file (RFC 5322 message) into a mailbox. Use "-" to read from stdin.`,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			filePath := args[0]
+
+			var reader io.Reader
+			if filePath == "-" {
+				reader = cmd.InOrStdin()
+			} else {
+				f, err := os.Open(filePath) // #nosec G304 -- user-provided file path is expected
+				if err != nil {
+					return fmt.Errorf("opening file: %w", err)
+				}
+				defer func() { _ = f.Close() }()
+				reader = f
+			}
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			keywords := make(map[string]bool)
+			if seen {
+				keywords["$seen"] = true
+			}
+			if flagged {
+				keywords["$flagged"] = true
+			}
+
+			opts := fastmail.ImportOptions{
+				Folder:   folder,
+				Keywords: keywords,
+			}
+
+			result, err := client.Mail().Import(ctx, reader, opts)
+			if err != nil {
+				return fmt.Errorf("importing email: %w", err)
+			}
+
+			return outputImportResult(cmd, result)
+		},
+	}
+
+	cmd.Flags().StringVarP(&folder, "folder", "f", "Inbox", "target mailbox folder")
+	cmd.Flags().BoolVar(&seen, "seen", false, "mark as read ($seen)")
+	cmd.Flags().BoolVar(&flagged, "flagged", false, "mark as flagged ($flagged)")
+
+	return cmd
+}
+
+// outputImportResult writes the import result to output.
+func outputImportResult(cmd *cobra.Command, result *fastmail.ImportResult) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		out := map[string]any{
+			"id":        result.ID,
+			"blob_id":   result.BlobID,
+			"thread_id": result.ThreadID,
+			"size":      result.Size,
+			"status":    "imported",
+		}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Imported: id=%s blob_id=%s size=%s\n", result.ID, result.BlobID, formatSize(result.Size))
 	return nil
 }
 

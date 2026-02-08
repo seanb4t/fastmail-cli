@@ -140,3 +140,18 @@ func (e *Email) IsFlagged() bool {
 func (e *Email) IsDraft() bool {
 	return e.HasKeyword(KeywordDraft)
 }
+
+// ImportResult represents the result of importing an RFC 5322 email message.
+type ImportResult struct {
+	// ID is the server-assigned email ID.
+	ID string
+
+	// BlobID is the blob identifier for the imported message.
+	BlobID string
+
+	// ThreadID is the conversation thread this email belongs to.
+	ThreadID string
+
+	// Size is the message size in bytes.
+	Size uint64
+}

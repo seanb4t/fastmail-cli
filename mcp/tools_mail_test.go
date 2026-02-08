@@ -30,6 +30,7 @@ func TestRegisterMailTools(t *testing.T) {
 		"mail_attachments",
 		"mail_download",
 		"mail_upload",
+		"mail_import",
 		"mailbox_list",
 		"mailbox_create",
 		"mailbox_rename",
@@ -654,6 +655,62 @@ func TestMailThreadTool_RequiresThreadID(t *testing.T) {
 	}
 	if err.Error() != "thread_id is required" {
 		t.Errorf("expected 'thread_id is required', got %q", err.Error())
+	}
+}
+
+func TestMailImportTool(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_import"]
+	if !ok {
+		t.Fatal("mail_import tool not found")
+	}
+
+	if rt.tool.Name != "mail_import" {
+		t.Errorf("expected name %q, got %q", "mail_import", rt.tool.Name)
+	}
+
+	if rt.tool.Description != "Import an RFC 5322 email message into a mailbox" {
+		t.Errorf("unexpected description: %s", rt.tool.Description)
+	}
+
+	// Verify input schema has expected properties
+	if _, ok := rt.tool.InputSchema.Properties["content"]; !ok {
+		t.Error("expected 'content' property in input schema")
+	}
+	if _, ok := rt.tool.InputSchema.Properties["folder"]; !ok {
+		t.Error("expected 'folder' property in input schema")
+	}
+	if _, ok := rt.tool.InputSchema.Properties["seen"]; !ok {
+		t.Error("expected 'seen' property in input schema")
+	}
+	if _, ok := rt.tool.InputSchema.Properties["flagged"]; !ok {
+		t.Error("expected 'flagged' property in input schema")
+	}
+
+	// Verify required fields
+	if !slices.Contains(rt.tool.InputSchema.Required, "content") {
+		t.Error("expected 'content' to be required")
+	}
+}
+
+func TestMailImportTool_RequiresContent(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_import"]
+	if !ok {
+		t.Fatal("mail_import tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing content")
+	}
+	if err.Error() != "content is required" {
+		t.Errorf("expected 'content is required', got %q", err.Error())
 	}
 }
 
