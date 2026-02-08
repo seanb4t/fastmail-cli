@@ -7,7 +7,7 @@ This guide explains how to integrate the fastmail-cli MCP server with AI clients
 The Model Context Protocol (MCP) allows AI assistants to access Fastmail data through a standardized interface. The fastmail-cli implements an MCP server that exposes:
 
 - **Resources**: Read-only access to emails, contacts, calendar events, and masked emails
-- **Tools**: Operations like sending email, archiving, and flagging (coming soon)
+- **Tools**: 28 tools for email, mailbox, contacts, calendar, masked email, vacation, and account operations
 
 ## Quick Start
 
@@ -130,6 +130,73 @@ Returns your masked email addresses.
 - Description: Amazon shopping
 ```
 
+## Available Tools
+
+The MCP server exposes 28 tools across 7 categories. See the [Tools Reference](../site/mcp/tools.md) for full input schemas and examples.
+
+### Mail Tools (9)
+
+| Tool | Description |
+|------|-------------|
+| `mail_list` | List emails from a mailbox folder |
+| `mail_get` | Get a single email by ID |
+| `mail_search` | Search emails by text query |
+| `mail_send` | Compose and send a new email |
+| `mail_reply` | Send a reply to an existing email |
+| `mail_move` | Move an email to a different folder |
+| `mail_delete` | Delete an email |
+| `mail_thread` | Get all emails in a conversation thread |
+| `mail_flag` | Set or remove flags/keywords on an email |
+
+### Mailbox Tools (4)
+
+| Tool | Description |
+|------|-------------|
+| `mailbox_list` | List all mailbox folders with unread/total counts |
+| `mailbox_create` | Create a new mailbox folder |
+| `mailbox_rename` | Rename an existing mailbox folder |
+| `mailbox_delete` | Delete a mailbox folder by ID |
+
+### Masked Email Tools (5)
+
+| Tool | Description |
+|------|-------------|
+| `masked_email_list` | List all masked email addresses |
+| `masked_email_create` | Create a new masked email address |
+| `masked_email_enable` | Enable a masked email by ID |
+| `masked_email_disable` | Disable a masked email by ID |
+| `masked_email_delete` | Delete a masked email by ID |
+
+### Contact Tools (5)
+
+| Tool | Description |
+|------|-------------|
+| `contacts_list` | List all contacts from the address book |
+| `contacts_get` | Get a single contact by ID |
+| `contacts_create` | Create a new contact |
+| `contacts_update` | Update an existing contact |
+| `contacts_delete` | Delete a contact by ID |
+
+### Calendar Tools (2)
+
+| Tool | Description |
+|------|-------------|
+| `calendar_events` | List calendar events within a date range |
+| `calendar_create` | Create a new calendar event |
+
+### Vacation Tools (2)
+
+| Tool | Description |
+|------|-------------|
+| `vacation_status` | Get vacation/out-of-office auto-reply status |
+| `vacation_set` | Enable or disable the vacation auto-reply |
+
+### Account Tools (1)
+
+| Tool | Description |
+|------|-------------|
+| `quota_get` | Get storage quota usage for the account |
+
 ## Protocol Details
 
 ### Transport
@@ -193,6 +260,53 @@ The MCP server uses stdio transport:
 }
 ```
 
+**List Tools:**
+```json
+{"jsonrpc":"2.0","id":3,"method":"tools/list"}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "tools": [
+      {
+        "name": "mail_list",
+        "description": "List emails from a mailbox folder",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "folder": {"type": "string", "description": "Mailbox folder name (default: Inbox)"},
+            "limit": {"type": "integer", "description": "Maximum emails to return (default: 10)"}
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+**Call Tool:**
+```json
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"mail_list","arguments":{"folder":"Inbox","limit":5}}}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "[{\"id\":\"M123\",\"subject\":\"Meeting notes\",\"preview\":\"Here are the notes...\"}]"
+      }
+    ]
+  }
+}
+```
+
 ## Error Handling
 
 Errors are returned as JSON-RPC error responses:
@@ -240,5 +354,3 @@ Errors are returned as JSON-RPC error responses:
 
 - API tokens are sensitive; don't commit to version control
 - Use environment variables or secure credential storage
-- The MCP server only exposes read operations by default
-- Tool operations (mutations) require explicit configuration

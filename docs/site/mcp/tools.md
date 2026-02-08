@@ -171,6 +171,140 @@ Delete email M123
 
 ---
 
+### mail_thread
+
+Get all emails in a conversation thread.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `thread_id` | string | Yes | The thread ID |
+
+**Example:**
+
+```
+Show me the full thread for thread T456
+```
+
+---
+
+### mail_flag
+
+Set or remove flags/keywords on an email.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The email ID |
+| `keywords` | object | Yes | Keys are keyword names (e.g., `$seen`, `$flagged`), values are `true`/`false` |
+
+**Example:**
+
+```
+Flag email M123 as important and mark it as read
+```
+
+**Response:**
+
+```json
+{
+  "id": "M123",
+  "keywords": {
+    "$seen": true,
+    "$flagged": true
+  }
+}
+```
+
+---
+
+## Mailbox Tools
+
+### mailbox_list
+
+List all mailbox folders with unread and total message counts.
+
+**Input Schema:** None
+
+**Example:**
+
+```
+Show my mailbox folders
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": "MB001",
+    "name": "Inbox",
+    "unread_count": 12,
+    "total_count": 458
+  }
+]
+```
+
+---
+
+### mailbox_create
+
+Create a new mailbox folder.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | string | Yes | Name for the new mailbox |
+| `parent_id` | string | No | Parent mailbox ID for nesting |
+
+**Example:**
+
+```
+Create a new mailbox folder called "Receipts"
+```
+
+---
+
+### mailbox_rename
+
+Rename an existing mailbox folder.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The mailbox ID |
+| `name` | string | Yes | New name for the mailbox |
+
+**Example:**
+
+```
+Rename mailbox MB001 to "Old Receipts"
+```
+
+---
+
+### mailbox_delete
+
+Delete a mailbox folder by ID.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The mailbox ID |
+
+**Example:**
+
+```
+Delete mailbox MB001
+```
+
+---
+
 ## Masked Email Tools
 
 ### masked_email_list
@@ -216,6 +350,60 @@ Create a new masked email address.
 
 ```
 Create a masked email for signing up to newsletter.example.com
+```
+
+---
+
+### masked_email_enable
+
+Enable a previously disabled masked email address.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The masked email ID |
+
+**Example:**
+
+```
+Enable masked email ME123
+```
+
+---
+
+### masked_email_disable
+
+Disable a masked email address (stops receiving mail).
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The masked email ID |
+
+**Example:**
+
+```
+Disable masked email ME123
+```
+
+---
+
+### masked_email_delete
+
+Delete a masked email address permanently.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The masked email ID |
+
+**Example:**
+
+```
+Delete masked email ME123
 ```
 
 ---
@@ -274,6 +462,45 @@ Add a contact named "Jane Smith" with email jane@example.com
 
 ---
 
+### contacts_update
+
+Update an existing contact.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The contact ID |
+| `name` | string | No | Updated full name |
+| `email` | string | No | Updated email address |
+| `phone` | string | No | Updated phone number |
+
+**Example:**
+
+```
+Update contact C456's email to jane.smith@newdomain.com
+```
+
+---
+
+### contacts_delete
+
+Delete a contact by ID.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The contact ID |
+
+**Example:**
+
+```
+Delete contact C456
+```
+
+---
+
 ## Calendar Tools
 
 ### calendar_events
@@ -317,3 +544,80 @@ Create a new calendar event.
 ```
 Create a meeting called "Team standup" tomorrow at 10am for 30 minutes
 ```
+
+---
+
+## Vacation Tools
+
+### vacation_status
+
+Get the current vacation/out-of-office auto-reply status.
+
+**Input Schema:** None
+
+**Example:**
+
+```
+Check if my vacation auto-reply is enabled
+```
+
+**Response:**
+
+```json
+{
+  "enabled": true,
+  "subject": "Out of Office",
+  "body": "I'm on vacation until Feb 14. I'll respond when I return.",
+  "from_date": "2026-02-07T00:00:00Z",
+  "to_date": "2026-02-14T23:59:59Z"
+}
+```
+
+---
+
+### vacation_set
+
+Enable or disable the vacation auto-reply.
+
+**Input Schema:**
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `enabled` | boolean | Yes | Whether to enable or disable the auto-reply |
+| `subject` | string | Yes (if enabled) | Auto-reply subject line |
+| `body` | string | Yes (if enabled) | Auto-reply body text |
+| `from_date` | string | No | Start date in RFC3339 format |
+| `to_date` | string | No | End date in RFC3339 format |
+
+**Example:**
+
+```
+Set my vacation reply from Feb 10 to Feb 14 with subject "Out of Office" and body "I'll be back on the 15th"
+```
+
+---
+
+## Account Tools
+
+### quota_get
+
+Get storage quota usage for the account.
+
+**Input Schema:** None
+
+**Example:**
+
+```
+How much storage am I using?
+```
+
+**Response:**
+
+```json
+{
+  "used": 2147483648,
+  "total": 53687091200,
+  "used_human": "2.0 GB",
+  "total_human": "50.0 GB",
+  "percent_used": 4.0
+}
