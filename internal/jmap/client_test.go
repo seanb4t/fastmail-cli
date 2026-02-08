@@ -3,12 +3,14 @@ package jmap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -455,5 +457,64 @@ func TestClient_DownloadBlob_HTTPError(t *testing.T) {
 	var httpErr *HTTPError
 	if assert.ErrorAs(t, err, &httpErr) {
 		assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
+	}
+}
+
+func TestClient_ErrorsAreOopsErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   func(t *testing.T) error
+	}{
+		{
+			name: "Authenticate decode error returns oops error",
+			fn: func(t *testing.T) error {
+				t.Helper()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{invalid json`))
+				}))
+				defer server.Close()
+
+				client := NewClient(server.URL, "token")
+				_, err := client.Authenticate(context.Background())
+				return err
+			},
+		},
+		{
+			name: "Authenticate network error returns oops error",
+			fn: func(t *testing.T) error {
+				t.Helper()
+				client := NewClient("http://127.0.0.1:0", "token")
+				_, err := client.Authenticate(context.Background())
+				return err
+			},
+		},
+		{
+			name: "Call session error returns oops error",
+			fn: func(t *testing.T) error {
+				t.Helper()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusUnauthorized)
+				}))
+				defer server.Close()
+
+				client := NewClient(server.URL, "bad-token")
+				req := NewRequest()
+				req.Invoke("Test/method", map[string]any{})
+				_, err := client.Call(context.Background(), req)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fn(t)
+			require.Error(t, err)
+
+			var oopsErr oops.OopsError
+			assert.True(t, errors.As(err, &oopsErr), "expected oops.OopsError, got %T: %v", err, err)
+		})
 	}
 }

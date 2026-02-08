@@ -112,6 +112,7 @@ func newVacationSetCommand() *cobra.Command {
 	cmd.Flags().StringVar(&toDate, "to", "", "end date (RFC3339)")
 	cmd.Flags().StringVar(&subject, "subject", "", "auto-reply subject")
 	cmd.Flags().StringVar(&textBody, "body", "", "auto-reply body text")
+	cmd.MarkFlagsMutuallyExclusive("enable", "disable")
 
 	return cmd
 }

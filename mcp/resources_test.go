@@ -228,14 +228,30 @@ func TestResourceContent(t *testing.T) {
 func TestCalendarToday_NoConfig(t *testing.T) {
 	registry := NewResourceRegistry(nil)
 
-	// Calendar should return informative message even without client
-	content, err := registry.Read(context.Background(), "fastmail://calendar/today")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// Calendar should return an error when CalDAV is not configured,
+	// not a fake success with error text in the body
+	_, err := registry.Read(context.Background(), "fastmail://calendar/today")
+	if err == nil {
+		t.Fatal("expected error when CalDAV is not configured, got nil")
 	}
 
-	if content.Text == "" {
-		t.Error("expected informative message about calendar config")
+	if !strings.Contains(err.Error(), "CalDAV") {
+		t.Errorf("expected error to mention CalDAV configuration, got: %v", err)
+	}
+}
+
+func TestContacts_NoConfig(t *testing.T) {
+	registry := NewResourceRegistry(nil)
+
+	// Contacts should return an error when CardDAV is not configured,
+	// not a fake success with error text in the body
+	_, err := registry.Read(context.Background(), "fastmail://contacts")
+	if err == nil {
+		t.Fatal("expected error when CardDAV is not configured, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "CardDAV") {
+		t.Errorf("expected error to mention CardDAV configuration, got: %v", err)
 	}
 }
 

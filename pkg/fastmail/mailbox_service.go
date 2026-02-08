@@ -17,7 +17,7 @@ type MailboxService struct {
 func (s *MailboxService) List(ctx context.Context) ([]Mailbox, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "listing mailboxes")
 	}
 
 	getBuilder := jmap.NewMailboxGet(accountID).
@@ -51,7 +51,7 @@ func (s *MailboxService) List(ctx context.Context) ([]Mailbox, error) {
 func (s *MailboxService) Create(ctx context.Context, name, parentID string) (*Mailbox, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "creating mailbox")
 	}
 
 	data := map[string]any{"name": name}
@@ -100,7 +100,7 @@ func (s *MailboxService) Create(ctx context.Context, name, parentID string) (*Ma
 func (s *MailboxService) Rename(ctx context.Context, id, newName string) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return err
+		return oops.Wrapf(err, "renaming mailbox")
 	}
 
 	setBuilder := jmap.NewMailboxSet(accountID).Update(id, map[string]any{"name": newName})
@@ -136,7 +136,7 @@ func (s *MailboxService) Rename(ctx context.Context, id, newName string) error {
 func (s *MailboxService) Delete(ctx context.Context, id string) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return err
+		return oops.Wrapf(err, "deleting mailbox")
 	}
 
 	setBuilder := jmap.NewMailboxSet(accountID).Destroy(id)

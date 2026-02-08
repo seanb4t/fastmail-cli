@@ -17,7 +17,7 @@ type ThreadService struct {
 func (s *ThreadService) Get(ctx context.Context, threadID string) ([]Email, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "getting thread")
 	}
 
 	// Step 1: Thread/get to get emailIds
@@ -78,5 +78,5 @@ func (s *ThreadService) Get(ctx context.Context, threadID string) ([]Email, erro
 		return nil, oops.Wrapf(err, "decoding email response")
 	}
 
-	return convertEmails(getResp.List), nil
+	return convertEmails(getResp.List)
 }

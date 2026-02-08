@@ -3,6 +3,8 @@ package jmap
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/samber/oops"
 )
 
 // Response represents a JMAP API response.
@@ -90,5 +92,5 @@ func (r *Response) GetResult(callID string) (*MethodResult, error) {
 			return &r.MethodResponses[i], nil
 		}
 	}
-	return nil, fmt.Errorf("no result for call ID %q", callID)
+	return nil, oops.Errorf("no result for call ID %q", callID)
 }

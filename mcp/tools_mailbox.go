@@ -65,12 +65,18 @@ func makeMailboxListHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailboxCreateHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		name := getStringArg(args, "name", "")
+		name, err := getStringArg(args, "name", "")
+		if err != nil {
+			return nil, err
+		}
 		if name == "" {
 			return nil, oops.Errorf("name is required")
 		}
 
-		parentID := getStringArg(args, "parent_id", "")
+		parentID, err := getStringArg(args, "parent_id", "")
+		if err != nil {
+			return nil, err
+		}
 
 		mb, err := cfg.Client.Mailbox().Create(ctx, name, parentID)
 		if err != nil {
@@ -87,12 +93,18 @@ func makeMailboxCreateHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailboxRenameHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
 
-		name := getStringArg(args, "name", "")
+		name, err := getStringArg(args, "name", "")
+		if err != nil {
+			return nil, err
+		}
 		if name == "" {
 			return nil, oops.Errorf("name is required")
 		}
@@ -111,7 +123,10 @@ func makeMailboxRenameHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailboxDeleteHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}

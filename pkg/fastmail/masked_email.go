@@ -49,7 +49,7 @@ type CreateMaskedEmailOptions struct {
 func (s *MaskedEmailService) List(ctx context.Context) ([]MaskedEmail, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "listing masked emails")
 	}
 
 	getBuilder := jmap.NewMaskedEmailGet(accountID)
@@ -82,7 +82,7 @@ func (s *MaskedEmailService) List(ctx context.Context) ([]MaskedEmail, error) {
 func (s *MaskedEmailService) Create(ctx context.Context, opts CreateMaskedEmailOptions) (*MaskedEmail, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "creating masked email")
 	}
 
 	setBuilder := jmap.NewMaskedEmailSet(accountID).
@@ -135,7 +135,7 @@ func (s *MaskedEmailService) Disable(ctx context.Context, id string) error {
 func (s *MaskedEmailService) updateState(ctx context.Context, id string, state jmap.MaskedEmailState) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return err
+		return oops.Wrapf(err, "updating masked email state")
 	}
 
 	setBuilder := jmap.NewMaskedEmailSet(accountID).
@@ -173,7 +173,7 @@ func (s *MaskedEmailService) updateState(ctx context.Context, id string, state j
 func (s *MaskedEmailService) Delete(ctx context.Context, id string) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return err
+		return oops.Wrapf(err, "deleting masked email")
 	}
 
 	setBuilder := jmap.NewMaskedEmailSet(accountID).Destroy(id)

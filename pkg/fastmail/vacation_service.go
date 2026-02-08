@@ -37,7 +37,7 @@ type VacationService struct {
 func (s *VacationService) Get(ctx context.Context) (*Vacation, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "getting vacation response")
 	}
 
 	getBuilder := jmap.NewVacationGet(accountID)
@@ -81,7 +81,7 @@ func (s *VacationService) Get(ctx context.Context) (*Vacation, error) {
 func (s *VacationService) Set(ctx context.Context, opts SetVacationOptions) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return err
+		return oops.Wrapf(err, "setting vacation response")
 	}
 
 	patch := make(map[string]any)

@@ -31,7 +31,7 @@ type IdentityService struct {
 func (s *IdentityService) List(ctx context.Context) ([]Identity, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "listing identities")
 	}
 
 	getBuilder := jmap.NewIdentityGet(accountID)

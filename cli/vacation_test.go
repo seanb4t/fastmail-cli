@@ -22,6 +22,23 @@ func TestVacationSet_NoFlags_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestVacationSet_EnableDisableMutuallyExclusive(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"vacation", "set", "--enable", "--disable"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("vacation set with both --enable and --disable should return an error")
+	}
+	// Cobra's mutually exclusive error says "if any flags in the group [enable disable] are set none of the others can be"
+	if !strings.Contains(err.Error(), "if any flags in the group") {
+		t.Errorf("expected mutually exclusive flags error, got: %v", err)
+	}
+}
+
 func TestVacationHelp_ShowsSubcommands(t *testing.T) {
 	cmd := NewRootCommand()
 	buf := new(bytes.Buffer)

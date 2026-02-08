@@ -140,8 +140,7 @@ func newMailboxDeleteCommand() *cobra.Command {
 			id := args[0]
 
 			if !force {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Are you sure you want to delete mailbox %s? Use --force to confirm.\n", id)
-				return nil
+				return fmt.Errorf("use --force to confirm deletion of mailbox %s", id)
 			}
 
 			client, err := createClient()
