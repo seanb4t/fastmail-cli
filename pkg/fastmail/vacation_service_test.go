@@ -124,6 +124,45 @@ func TestVacationService_Get_Empty(t *testing.T) {
 	assert.Empty(t, vacation.Subject)
 }
 
+func TestVacationService_Set_NotUpdated(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["VacationResponse/set", {
+					"accountId": "acc1",
+					"oldState": "v1",
+					"newState": "v1",
+					"updated": {},
+					"notUpdated": {
+						"singleton": {
+							"type": "invalidProperties",
+							"description": "fromDate is not a valid date"
+						}
+					}
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponseWithVacation(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	err := client.Vacation().Set(ctx, SetVacationOptions{
+		FromDate: "not-a-date",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "fromDate is not a valid date")
+}
+
 func TestVacationService_Set(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any

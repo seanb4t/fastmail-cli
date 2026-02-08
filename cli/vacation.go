@@ -58,6 +58,10 @@ func newVacationSetCommand() *cobra.Command {
 		Short: "Set vacation response",
 		Long:  "Configure vacation auto-reply settings.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !enable && !disable && fromDate == "" && toDate == "" && subject == "" && textBody == "" {
+				return fmt.Errorf("at least one option is required (--enable, --disable, --from, --to, --subject, --body)")
+			}
+
 			opts := fastmail.SetVacationOptions{
 				FromDate: fromDate,
 				ToDate:   toDate,

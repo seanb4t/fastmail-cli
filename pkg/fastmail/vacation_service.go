@@ -121,5 +121,13 @@ func (s *VacationService) Set(ctx context.Context, opts SetVacationOptions) erro
 		return oops.Errorf("set failed: %s", result.Error())
 	}
 
+	var setResp jmap.VacationSetResponse
+	if err := result.Decode(&setResp); err != nil {
+		return oops.Wrapf(err, "decoding response")
+	}
+	if errInfo, ok := setResp.NotUpdated["singleton"]; ok {
+		return oops.Errorf("failed to set vacation: %s", errInfo.Error())
+	}
+
 	return nil
 }
