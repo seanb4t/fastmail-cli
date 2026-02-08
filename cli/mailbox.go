@@ -154,6 +154,20 @@ func newMailboxDeleteCommand() *cobra.Command {
 				return fmt.Errorf("connecting: %w", err)
 			}
 
+			// Check for protected roles — refuse to delete well-known mailboxes
+			mailboxes, err := client.Mailbox().List(ctx)
+			if err != nil {
+				return fmt.Errorf("checking mailbox: %w", err)
+			}
+			protectedRoles := map[string]bool{
+				"inbox": true, "drafts": true, "sent": true, "trash": true, "junk": true,
+			}
+			for _, mb := range mailboxes {
+				if mb.ID == id && protectedRoles[string(mb.Role)] {
+					return fmt.Errorf("cannot delete %s mailbox (role: %s)", mb.Name, mb.Role)
+				}
+			}
+
 			if err := client.Mailbox().Delete(ctx, id); err != nil {
 				return fmt.Errorf("deleting mailbox: %w", err)
 			}
