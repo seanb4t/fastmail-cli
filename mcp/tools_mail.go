@@ -38,6 +38,7 @@ func RegisterMailTools(s *Server, cfg ToolsConfig) {
 	registerVacationTools(s, cfg)
 	registerAccountTools(s, cfg)
 	registerIdentityTools(s, cfg)
+	registerFilterTools(s, cfg)
 }
 
 // registerMailTools registers email tools.

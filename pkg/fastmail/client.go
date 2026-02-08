@@ -74,6 +74,13 @@ func (c *Client) Quota() *QuotaService {
 	}
 }
 
+// Sieve returns the sieve service for filter script operations.
+func (c *Client) Sieve() *SieveService {
+	return &SieveService{
+		client: c,
+	}
+}
+
 // Identity returns the identity service for sender identity operations.
 func (c *Client) Identity() *IdentityService {
 	return &IdentityService{

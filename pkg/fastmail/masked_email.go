@@ -170,6 +170,8 @@ func (s *MaskedEmailService) updateState(ctx context.Context, id string, state j
 }
 
 // Delete permanently deletes a masked email address.
+//
+//nolint:dupl // JMAP service pattern - structural similarity with other services is intentional
 func (s *MaskedEmailService) Delete(ctx context.Context, id string) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
