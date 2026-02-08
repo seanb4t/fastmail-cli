@@ -251,24 +251,14 @@ func (r *ResourceRegistry) handleMail(ctx context.Context, params map[string]str
 
 // handleContacts returns the contact list.
 func (r *ResourceRegistry) handleContacts(_ context.Context, _ map[string]string) (*ResourceContent, error) {
-	// Contacts require CardDAV client which may not be configured via JMAP
-	// Return informative message if not available
-	return &ResourceContent{
-		URI:      "fastmail://contacts",
-		MimeType: "text/plain",
-		Text:     "Contacts access requires CardDAV configuration. Use the contacts_list tool instead.",
-	}, nil
+	// Contacts require CardDAV client which is not configured via JMAP
+	return nil, oops.Errorf("contacts access requires CardDAV configuration")
 }
 
 // handleCalendarToday returns today's calendar events.
 func (r *ResourceRegistry) handleCalendarToday(_ context.Context, _ map[string]string) (*ResourceContent, error) {
-	// Calendar service requires DAV client which may not be configured
-	// Return informative message if not available
-	return &ResourceContent{
-		URI:      "fastmail://calendar/today",
-		MimeType: "text/plain",
-		Text:     "Calendar access requires CalDAV configuration. No events available.",
-	}, nil
+	// Calendar service requires DAV client which is not configured
+	return nil, oops.Errorf("calendar access requires CalDAV configuration")
 }
 
 // handleMaskedEmails returns the masked email list.

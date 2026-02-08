@@ -132,8 +132,14 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 
 func makeMailListHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		folder := getStringArg(args, "folder", "Inbox")
-		limit := getUint64Arg(args, "limit", 10)
+		folder, err := getStringArg(args, "folder", "Inbox")
+		if err != nil {
+			return nil, err
+		}
+		limit, err := getUint64Arg(args, "limit", 10)
+		if err != nil {
+			return nil, err
+		}
 
 		emails, err := cfg.Client.Mail().List(ctx, folder, limit)
 		if err != nil {
@@ -146,7 +152,10 @@ func makeMailListHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailGetHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -162,11 +171,17 @@ func makeMailGetHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailSearchHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		query := getStringArg(args, "query", "")
+		query, err := getStringArg(args, "query", "")
+		if err != nil {
+			return nil, err
+		}
 		if query == "" {
 			return nil, oops.Errorf("query is required")
 		}
-		limit := getUint64Arg(args, "limit", 10)
+		limit, err := getUint64Arg(args, "limit", 10)
+		if err != nil {
+			return nil, err
+		}
 
 		emails, err := cfg.Client.Mail().Search(ctx, query, limit)
 		if err != nil {
@@ -179,23 +194,41 @@ func makeMailSearchHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailSendHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		to := getStringSliceArg(args, "to")
+		to, err := getStringSliceArg(args, "to")
+		if err != nil {
+			return nil, err
+		}
 		if len(to) == 0 {
 			return nil, oops.Errorf("to is required")
 		}
-		subject := getStringArg(args, "subject", "")
+		subject, err := getStringArg(args, "subject", "")
+		if err != nil {
+			return nil, err
+		}
 		if subject == "" {
 			return nil, oops.Errorf("subject is required")
 		}
-		body := getStringArg(args, "body", "")
+		body, err := getStringArg(args, "body", "")
+		if err != nil {
+			return nil, err
+		}
 		if body == "" {
 			return nil, oops.Errorf("body is required")
 		}
 
+		cc, err := getStringSliceArg(args, "cc")
+		if err != nil {
+			return nil, err
+		}
+		bcc, err := getStringSliceArg(args, "bcc")
+		if err != nil {
+			return nil, err
+		}
+
 		opts := fastmail.SendOptions{
 			To:      parseAddresses(to),
-			Cc:      parseAddresses(getStringSliceArg(args, "cc")),
-			Bcc:     parseAddresses(getStringSliceArg(args, "bcc")),
+			Cc:      parseAddresses(cc),
+			Bcc:     parseAddresses(bcc),
 			Subject: subject,
 			Body:    body,
 		}
@@ -214,15 +247,24 @@ func makeMailSendHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailReplyHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		emailID := getStringArg(args, "email_id", "")
+		emailID, err := getStringArg(args, "email_id", "")
+		if err != nil {
+			return nil, err
+		}
 		if emailID == "" {
 			return nil, oops.Errorf("email_id is required")
 		}
-		body := getStringArg(args, "body", "")
+		body, err := getStringArg(args, "body", "")
+		if err != nil {
+			return nil, err
+		}
 		if body == "" {
 			return nil, oops.Errorf("body is required")
 		}
-		replyAll := getBoolArg(args, "reply_all", false)
+		replyAll, err := getBoolArg(args, "reply_all", false)
+		if err != nil {
+			return nil, err
+		}
 
 		opts := fastmail.ReplyOptions{
 			EmailID:  emailID,
@@ -244,11 +286,17 @@ func makeMailReplyHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailMoveHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
-		folder := getStringArg(args, "folder", "")
+		folder, err := getStringArg(args, "folder", "")
+		if err != nil {
+			return nil, err
+		}
 		if folder == "" {
 			return nil, oops.Errorf("folder is required")
 		}
@@ -267,22 +315,49 @@ func makeMailMoveHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailFlagHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
 
+		read, err := getBoolArg(args, "read", false)
+		if err != nil {
+			return nil, err
+		}
+		unread, err := getBoolArg(args, "unread", false)
+		if err != nil {
+			return nil, err
+		}
+		if read && unread {
+			return nil, oops.Errorf("read and unread are mutually exclusive")
+		}
+
+		flagged, err := getBoolArg(args, "flagged", false)
+		if err != nil {
+			return nil, err
+		}
+		unflagged, err := getBoolArg(args, "unflagged", false)
+		if err != nil {
+			return nil, err
+		}
+		if flagged && unflagged {
+			return nil, oops.Errorf("flagged and unflagged are mutually exclusive")
+		}
+
 		keywords := make(map[string]bool)
-		if getBoolArg(args, "read", false) {
+		if read {
 			keywords["$seen"] = true
 		}
-		if getBoolArg(args, "unread", false) {
+		if unread {
 			keywords["$seen"] = false
 		}
-		if getBoolArg(args, "flagged", false) {
+		if flagged {
 			keywords["$flagged"] = true
 		}
-		if getBoolArg(args, "unflagged", false) {
+		if unflagged {
 			keywords["$flagged"] = false
 		}
 
@@ -303,7 +378,10 @@ func makeMailFlagHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailDeleteHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -332,7 +410,10 @@ func registerThreadTools(s *Server, cfg ToolsConfig) {
 
 func makeThreadGetHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -392,9 +473,17 @@ func makeMaskedEmailListHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMaskedEmailCreateHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
+		domain, err := getStringArg(args, "domain", "")
+		if err != nil {
+			return nil, err
+		}
+		description, err := getStringArg(args, "description", "")
+		if err != nil {
+			return nil, err
+		}
 		opts := fastmail.CreateMaskedEmailOptions{
-			ForDomain:   getStringArg(args, "domain", ""),
-			Description: getStringArg(args, "description", ""),
+			ForDomain:   domain,
+			Description: description,
 		}
 
 		email, err := cfg.Client.MaskedEmail().Create(ctx, opts)
@@ -459,18 +548,42 @@ func makeVacationGetHandler(cfg ToolsConfig) ToolHandler {
 
 func makeVacationSetHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
+		fromDate, err := getStringArg(args, "from_date", "")
+		if err != nil {
+			return nil, err
+		}
+		toDate, err := getStringArg(args, "to_date", "")
+		if err != nil {
+			return nil, err
+		}
+		subject, err := getStringArg(args, "subject", "")
+		if err != nil {
+			return nil, err
+		}
+		textBody, err := getStringArg(args, "text_body", "")
+		if err != nil {
+			return nil, err
+		}
 		opts := fastmail.SetVacationOptions{
-			FromDate: getStringArg(args, "from_date", ""),
-			ToDate:   getStringArg(args, "to_date", ""),
-			Subject:  getStringArg(args, "subject", ""),
-			TextBody: getStringArg(args, "text_body", ""),
+			FromDate: fromDate,
+			ToDate:   toDate,
+			Subject:  subject,
+			TextBody: textBody,
 		}
 
-		if getBoolArg(args, "enable", false) {
+		enable, err := getBoolArg(args, "enable", false)
+		if err != nil {
+			return nil, err
+		}
+		if enable {
 			t := true
 			opts.IsEnabled = &t
 		}
-		if getBoolArg(args, "disable", false) {
+		disable, err := getBoolArg(args, "disable", false)
+		if err != nil {
+			return nil, err
+		}
+		if disable {
 			f := false
 			opts.IsEnabled = &f
 		}
@@ -560,7 +673,10 @@ func makeContactsGetHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("contacts client not configured")
 		}
 
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -585,15 +701,27 @@ func makeContactsCreateHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("contacts client not configured")
 		}
 
-		name := getStringArg(args, "name", "")
+		name, err := getStringArg(args, "name", "")
+		if err != nil {
+			return nil, err
+		}
 		if name == "" {
 			return nil, oops.Errorf("name is required")
 		}
 
+		email, err := getStringArg(args, "email", "")
+		if err != nil {
+			return nil, err
+		}
+		phone, err := getStringArg(args, "phone", "")
+		if err != nil {
+			return nil, err
+		}
+
 		contact := &fastmail.Contact{
 			Name:  name,
-			Email: getStringArg(args, "email", ""),
-			Phone: getStringArg(args, "phone", ""),
+			Email: email,
+			Phone: phone,
 		}
 
 		if err := cfg.Contacts.Create(ctx, contact); err != nil {
@@ -616,7 +744,10 @@ func makeContactsUpdateHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("contacts client not configured")
 		}
 
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -628,20 +759,26 @@ func makeContactsUpdateHandler(cfg ToolsConfig) ToolHandler {
 		}
 
 		// Apply provided fields
-		if name, ok := args["name"]; ok {
-			if s, ok := name.(string); ok {
-				existing.Name = s
+		if _, ok := args["name"]; ok {
+			name, err := getStringArg(args, "name", "")
+			if err != nil {
+				return nil, err
 			}
+			existing.Name = name
 		}
-		if email, ok := args["email"]; ok {
-			if s, ok := email.(string); ok {
-				existing.Email = s
+		if _, ok := args["email"]; ok {
+			email, err := getStringArg(args, "email", "")
+			if err != nil {
+				return nil, err
 			}
+			existing.Email = email
 		}
-		if phone, ok := args["phone"]; ok {
-			if s, ok := phone.(string); ok {
-				existing.Phone = s
+		if _, ok := args["phone"]; ok {
+			phone, err := getStringArg(args, "phone", "")
+			if err != nil {
+				return nil, err
 			}
+			existing.Phone = phone
 		}
 
 		if err := cfg.Contacts.Update(ctx, existing); err != nil {
@@ -664,7 +801,10 @@ func makeContactsDeleteHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("contacts client not configured")
 		}
 
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -746,11 +886,17 @@ func makeCalendarEventsHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("calendar not configured")
 		}
 
-		startStr := getStringArg(args, "start", "")
+		startStr, err := getStringArg(args, "start", "")
+		if err != nil {
+			return nil, err
+		}
 		if startStr == "" {
 			return nil, oops.Errorf("start is required")
 		}
-		endStr := getStringArg(args, "end", "")
+		endStr, err := getStringArg(args, "end", "")
+		if err != nil {
+			return nil, err
+		}
 		if endStr == "" {
 			return nil, oops.Errorf("end is required")
 		}
@@ -764,7 +910,10 @@ func makeCalendarEventsHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Wrapf(err, "parsing end time")
 		}
 
-		calendarID := getStringArg(args, "calendar_id", "")
+		calendarID, err := getStringArg(args, "calendar_id", "")
+		if err != nil {
+			return nil, err
+		}
 
 		events, err := cfg.Calendar.ListEventsFunc(ctx, calendarID, start, end)
 		if err != nil {
@@ -781,19 +930,31 @@ func makeCalendarCreateHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("calendar not configured")
 		}
 
-		calendarID := getStringArg(args, "calendar_id", "")
+		calendarID, err := getStringArg(args, "calendar_id", "")
+		if err != nil {
+			return nil, err
+		}
 		if calendarID == "" {
 			return nil, oops.Errorf("calendar_id is required")
 		}
-		summary := getStringArg(args, "summary", "")
+		summary, err := getStringArg(args, "summary", "")
+		if err != nil {
+			return nil, err
+		}
 		if summary == "" {
 			return nil, oops.Errorf("summary is required")
 		}
-		startStr := getStringArg(args, "start", "")
+		startStr, err := getStringArg(args, "start", "")
+		if err != nil {
+			return nil, err
+		}
 		if startStr == "" {
 			return nil, oops.Errorf("start is required")
 		}
-		endStr := getStringArg(args, "end", "")
+		endStr, err := getStringArg(args, "end", "")
+		if err != nil {
+			return nil, err
+		}
 		if endStr == "" {
 			return nil, oops.Errorf("end is required")
 		}
@@ -807,14 +968,27 @@ func makeCalendarCreateHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Wrapf(err, "parsing end time")
 		}
 
+		description, err := getStringArg(args, "description", "")
+		if err != nil {
+			return nil, err
+		}
+		location, err := getStringArg(args, "location", "")
+		if err != nil {
+			return nil, err
+		}
+		allDay, err := getBoolArg(args, "all_day", false)
+		if err != nil {
+			return nil, err
+		}
+
 		event := &fastmail.Event{
 			CalendarID:  calendarID,
 			Summary:     summary,
-			Description: getStringArg(args, "description", ""),
-			Location:    getStringArg(args, "location", ""),
+			Description: description,
+			Location:    location,
 			Start:       start,
 			End:         end,
-			AllDay:      getBoolArg(args, "all_day", false),
+			AllDay:      allDay,
 		}
 
 		if err := cfg.Calendar.CreateEventFunc(ctx, event); err != nil {
@@ -838,7 +1012,10 @@ func makeCalendarGetHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("calendar not configured")
 		}
 
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -858,7 +1035,10 @@ func makeCalendarUpdateHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("calendar not configured")
 		}
 
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -870,23 +1050,33 @@ func makeCalendarUpdateHandler(cfg ToolsConfig) ToolHandler {
 		}
 
 		// Apply updates
-		if s := getStringArg(args, "summary", ""); s != "" {
+		if s, sErr := getStringArg(args, "summary", ""); sErr != nil {
+			return nil, sErr
+		} else if s != "" {
 			event.Summary = s
 		}
-		if s := getStringArg(args, "location", ""); s != "" {
+		if s, sErr := getStringArg(args, "location", ""); sErr != nil {
+			return nil, sErr
+		} else if s != "" {
 			event.Location = s
 		}
-		if s := getStringArg(args, "description", ""); s != "" {
+		if s, sErr := getStringArg(args, "description", ""); sErr != nil {
+			return nil, sErr
+		} else if s != "" {
 			event.Description = s
 		}
-		if s := getStringArg(args, "start", ""); s != "" {
+		if s, sErr := getStringArg(args, "start", ""); sErr != nil {
+			return nil, sErr
+		} else if s != "" {
 			t, parseErr := time.Parse(time.RFC3339, s)
 			if parseErr != nil {
 				return nil, oops.Wrapf(parseErr, "invalid start time")
 			}
 			event.Start = t
 		}
-		if s := getStringArg(args, "end", ""); s != "" {
+		if s, sErr := getStringArg(args, "end", ""); sErr != nil {
+			return nil, sErr
+		} else if s != "" {
 			t, parseErr := time.Parse(time.RFC3339, s)
 			if parseErr != nil {
 				return nil, oops.Wrapf(parseErr, "invalid end time")
@@ -908,7 +1098,10 @@ func makeCalendarDeleteHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("calendar not configured")
 		}
 
-		id := getStringArg(args, "id", "")
+		id, err := getStringArg(args, "id", "")
+		if err != nil {
+			return nil, err
+		}
 		if id == "" {
 			return nil, oops.Errorf("id is required")
 		}
@@ -968,62 +1161,79 @@ func convertEventsToMCP(events []fastmail.Event) []*Event {
 
 // Helper functions
 
-func getStringArg(args map[string]any, key, defaultValue string) string {
-	if v, ok := args[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
+func getStringArg(args map[string]any, key, defaultValue string) (string, error) {
+	v, ok := args[key]
+	if !ok {
+		return defaultValue, nil
 	}
-	return defaultValue
+	s, ok := v.(string)
+	if !ok {
+		return "", oops.Errorf("%s must be a string, got %T", key, v)
+	}
+	return s, nil
 }
 
-func getUint64Arg(args map[string]any, key string, defaultValue uint64) uint64 {
-	if v, ok := args[key]; ok {
-		switch n := v.(type) {
-		case float64:
-			if n >= 0 {
-				return uint64(n)
-			}
-		case int:
-			if n >= 0 {
-				return uint64(n)
-			}
-		case int64:
-			if n >= 0 {
-				return uint64(n)
-			}
-		case uint64:
-			return n
-		}
+func getUint64Arg(args map[string]any, key string, defaultValue uint64) (uint64, error) {
+	v, ok := args[key]
+	if !ok {
+		return defaultValue, nil
 	}
-	return defaultValue
+	switch n := v.(type) {
+	case float64:
+		if n < 0 {
+			return 0, oops.Errorf("%s must be non-negative, got %v", key, v)
+		}
+		return uint64(n), nil
+	case int:
+		if n < 0 {
+			return 0, oops.Errorf("%s must be non-negative, got %v", key, v)
+		}
+		return uint64(n), nil
+	case int64:
+		if n < 0 {
+			return 0, oops.Errorf("%s must be non-negative, got %v", key, v)
+		}
+		return uint64(n), nil
+	case uint64:
+		return n, nil
+	default:
+		return 0, oops.Errorf("%s must be a number, got %T", key, v)
+	}
 }
 
-func getBoolArg(args map[string]any, key string, defaultValue bool) bool {
-	if v, ok := args[key]; ok {
-		if b, ok := v.(bool); ok {
-			return b
-		}
+func getBoolArg(args map[string]any, key string, defaultValue bool) (bool, error) {
+	v, ok := args[key]
+	if !ok {
+		return defaultValue, nil
 	}
-	return defaultValue
+	b, ok := v.(bool)
+	if !ok {
+		return false, oops.Errorf("%s must be a boolean, got %T", key, v)
+	}
+	return b, nil
 }
 
-func getStringSliceArg(args map[string]any, key string) []string {
-	if v, ok := args[key]; ok {
-		switch arr := v.(type) {
-		case []string:
-			return arr
-		case []any:
-			result := make([]string, 0, len(arr))
-			for _, item := range arr {
-				if s, ok := item.(string); ok {
-					result = append(result, s)
-				}
-			}
-			return result
-		}
+func getStringSliceArg(args map[string]any, key string) ([]string, error) {
+	v, ok := args[key]
+	if !ok {
+		return nil, nil
 	}
-	return nil
+	switch arr := v.(type) {
+	case []string:
+		return arr, nil
+	case []any:
+		result := make([]string, 0, len(arr))
+		for i, item := range arr {
+			s, ok := item.(string)
+			if !ok {
+				return nil, oops.Errorf("%s must contain only strings, element %d is %T", key, i, item)
+			}
+			result = append(result, s)
+		}
+		return result, nil
+	default:
+		return nil, oops.Errorf("%s must be an array, got %T", key, v)
+	}
 }
 
 func parseAddresses(addrs []string) []fastmail.EmailAddress {

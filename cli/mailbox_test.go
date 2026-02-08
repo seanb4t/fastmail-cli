@@ -101,7 +101,7 @@ func TestMailboxDelete_RequiresIDArg(t *testing.T) {
 	}
 }
 
-func TestMailboxDelete_NoForceShowsWarning(t *testing.T) {
+func TestMailboxDelete_NoForceReturnsError(t *testing.T) {
 	cmd := NewRootCommand()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
@@ -109,16 +109,13 @@ func TestMailboxDelete_NoForceShowsWarning(t *testing.T) {
 	cmd.SetArgs([]string{"mailbox", "delete", "mb-123"})
 
 	err := cmd.Execute()
-	if err != nil {
-		t.Fatalf("mailbox delete without --force should not error: %v", err)
+	if err == nil {
+		t.Fatal("mailbox delete without --force should return an error")
 	}
 
-	output := buf.String()
-	if !strings.Contains(output, "Are you sure") {
-		t.Errorf("expected confirmation warning, got: %q", output)
-	}
-	if !strings.Contains(output, "--force") {
-		t.Errorf("expected --force hint, got: %q", output)
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "--force") {
+		t.Errorf("expected error to mention --force, got: %q", errMsg)
 	}
 }
 

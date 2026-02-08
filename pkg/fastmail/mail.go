@@ -2,9 +2,9 @@ package fastmail
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +13,9 @@ import (
 
 	"github.com/seanb4t/fastmail-cli/internal/jmap"
 )
+
+// ErrMailboxNotFound is returned when a mailbox cannot be found by name or role.
+var ErrMailboxNotFound = errors.New("mailbox not found")
 
 // MailService provides email operations.
 type MailService struct {
@@ -25,7 +28,7 @@ type MailService struct {
 func (s *MailService) List(ctx context.Context, folder string, limit uint64) ([]Email, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "listing emails")
 	}
 
 	mailboxID, err := s.resolveMailbox(ctx, accountID, folder)
@@ -80,14 +83,14 @@ func (s *MailService) List(ctx context.Context, folder string, limit uint64) ([]
 		return nil, oops.Wrapf(err, "decoding email response")
 	}
 
-	return convertEmails(getResp.List), nil
+	return convertEmails(getResp.List)
 }
 
 // Get returns a single email by ID.
 func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "getting email")
 	}
 
 	getBuilder := jmap.NewEmailGet(accountID).
@@ -123,8 +126,9 @@ func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 		return nil, oops.Errorf("email not found: %s", id)
 	}
 
-	emails := convertEmails(getResp.List)
-	return &emails[0], nil
+	emails, parseErr := convertEmails(getResp.List)
+	// Parse warnings are non-fatal for single email get — propagate but still return
+	return &emails[0], parseErr
 }
 
 // GetFull returns a single email with full display properties including
@@ -132,7 +136,7 @@ func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 func (s *MailService) GetFull(ctx context.Context, id string) (*Email, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "getting full email")
 	}
 
 	getBuilder := jmap.NewEmailGet(accountID).
@@ -172,15 +176,16 @@ func (s *MailService) GetFull(ctx context.Context, id string) (*Email, error) {
 		return nil, oops.Errorf("email not found: %s", id)
 	}
 
-	email := convertFullEmail(getResp.List[0])
-	return &email, nil
+	email, parseErr := convertFullEmail(getResp.List[0])
+	// Parse warnings are non-fatal — propagate but still return the email
+	return &email, parseErr
 }
 
 // GetRaw returns the raw RFC 5322 source of an email.
 func (s *MailService) GetRaw(ctx context.Context, id string) (io.ReadCloser, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "getting raw email")
 	}
 
 	getBuilder := jmap.NewEmailGet(accountID).
@@ -233,20 +238,38 @@ func (s *MailService) Search(ctx context.Context, query string, limit uint64) ([
 func (s *MailService) SearchWithFilter(ctx context.Context, filter map[string]any, limit uint64) ([]Email, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, oops.Wrapf(err, "searching emails")
+	}
+
+	// Copy filter to avoid mutating caller's map
+	filterCopy := make(map[string]any, len(filter))
+	for k, v := range filter {
+		filterCopy[k] = v
+	}
+
+	// Deep-copy nested conditions if present
+	if conditions, ok := filterCopy["conditions"].([]map[string]any); ok {
+		copiedConds := make([]map[string]any, len(conditions))
+		for i, cond := range conditions {
+			copiedConds[i] = make(map[string]any, len(cond))
+			for k, v := range cond {
+				copiedConds[i][k] = v
+			}
+		}
+		filterCopy["conditions"] = copiedConds
 	}
 
 	// Resolve inMailbox folder name to ID if present
-	if inMailbox, ok := filter["inMailbox"].(string); ok {
+	if inMailbox, ok := filterCopy["inMailbox"].(string); ok {
 		resolvedID, resolveErr := s.resolveMailbox(ctx, accountID, inMailbox)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
-		filter["inMailbox"] = resolvedID
+		filterCopy["inMailbox"] = resolvedID
 	}
 
 	// Also check nested conditions for compound filters
-	if conditions, ok := filter["conditions"].([]map[string]any); ok {
+	if conditions, ok := filterCopy["conditions"].([]map[string]any); ok {
 		for _, cond := range conditions {
 			if inMailbox, ok := cond["inMailbox"].(string); ok {
 				resolvedID, resolveErr := s.resolveMailbox(ctx, accountID, inMailbox)
@@ -260,7 +283,7 @@ func (s *MailService) SearchWithFilter(ctx context.Context, filter map[string]an
 
 	queryArgs := map[string]any{
 		"accountId": accountID,
-		"filter":    filter,
+		"filter":    filterCopy,
 		"sort": []jmap.Comparator{
 			{Property: "receivedAt", IsAscending: false},
 		},
@@ -307,7 +330,7 @@ func (s *MailService) SearchWithFilter(ctx context.Context, filter map[string]an
 		return nil, oops.Wrapf(err, "decoding email response")
 	}
 
-	return convertEmails(getResp.List), nil
+	return convertEmails(getResp.List)
 }
 
 // Move moves an email to a different folder.
@@ -315,13 +338,7 @@ func (s *MailService) SearchWithFilter(ctx context.Context, filter map[string]an
 func (s *MailService) Move(ctx context.Context, id string, folder string) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return err
-	}
-
-	// First get the current email to know its mailboxes
-	email, err := s.Get(ctx, id)
-	if err != nil {
-		return oops.Wrapf(err, "getting email")
+		return oops.Wrapf(err, "moving email")
 	}
 
 	targetMailboxID, err := s.resolveMailbox(ctx, accountID, folder)
@@ -329,7 +346,7 @@ func (s *MailService) Move(ctx context.Context, id string, folder string) error 
 		return oops.Wrapf(err, "resolving folder %q", folder)
 	}
 
-	// Build new mailboxIds map - remove all current, add target
+	// Setting mailboxIds replaces all current mailbox assignments
 	newMailboxIDs := map[string]bool{
 		targetMailboxID: true,
 	}
@@ -372,9 +389,6 @@ func (s *MailService) Move(ctx context.Context, id string, folder string) error 
 		return oops.Errorf("failed to move email: %s", errInfo.Error())
 	}
 
-	// Suppress unused variable warning - email was used to validate existence
-	_ = email
-
 	return nil
 }
 
@@ -382,7 +396,7 @@ func (s *MailService) Move(ctx context.Context, id string, folder string) error 
 func (s *MailService) Delete(ctx context.Context, id string) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return err
+		return oops.Wrapf(err, "deleting email")
 	}
 
 	// Get the email to check if it's already in Trash
@@ -394,8 +408,12 @@ func (s *MailService) Delete(ctx context.Context, id string) error {
 	// Find the Trash mailbox
 	trashID, err := s.resolveMailbox(ctx, accountID, "Trash")
 	if err != nil {
-		// If no Trash folder, permanently delete
-		return s.destroy(ctx, accountID, id)
+		if errors.Is(err, ErrMailboxNotFound) {
+			// No Trash folder exists, permanently delete
+			return s.destroy(ctx, accountID, id)
+		}
+		// Transient error (network, auth, server) — do NOT silently destroy
+		return oops.Wrapf(err, "looking up Trash mailbox")
 	}
 
 	// Check if already in Trash
@@ -451,14 +469,18 @@ func (s *MailService) destroy(ctx context.Context, accountID, id string) error {
 func (s *MailService) SetKeywords(ctx context.Context, id string, keywords map[string]bool) error {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return err
+		return oops.Wrapf(err, "setting email keywords")
 	}
 
 	// Build patch map for JMAP Email/set update
-	// JMAP uses "keywords/$seen" as key with value true/false
+	// Per RFC 8621 §4.1.1: keyword values MUST be true; to remove, set to null (nil)
 	patch := make(map[string]any, len(keywords))
 	for keyword, value := range keywords {
-		patch["keywords/"+keyword] = value
+		if value {
+			patch["keywords/"+keyword] = true
+		} else {
+			patch["keywords/"+keyword] = nil // null removes the keyword per RFC 8621
+		}
 	}
 
 	setBuilder := jmap.NewEmailSet(accountID).Update(id, patch)
@@ -558,19 +580,23 @@ func (s *MailService) resolveMailbox(ctx context.Context, accountID, folder stri
 		}
 	}
 
-	return "", oops.Errorf("mailbox not found: %s", folder)
+	return "", oops.Wrapf(ErrMailboxNotFound, "%s", folder)
 }
 
 // convertEmails converts JMAP emails to domain emails.
-func convertEmails(jmapEmails []jmap.Email) []Email {
+// Returns all emails even if some have invalid timestamps; the error aggregates
+// any timestamp parse failures so callers can log or propagate them.
+func convertEmails(jmapEmails []jmap.Email) ([]Email, error) {
 	emails := make([]Email, len(jmapEmails))
+	var parseErrors []string
 	for i, je := range jmapEmails {
 		var receivedAt time.Time
 		if je.ReceivedAt != "" {
 			var parseErr error
 			receivedAt, parseErr = time.Parse(time.RFC3339, je.ReceivedAt)
 			if parseErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: invalid date %q for email %s\n", je.ReceivedAt, je.ID)
+				parseErrors = append(parseErrors, fmt.Sprintf(
+					"email %s: invalid ReceivedAt %q: %v", je.ID, je.ReceivedAt, parseErr))
 			}
 		}
 
@@ -598,12 +624,18 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 			MailboxIDs: mailboxIDs,
 		}
 	}
-	return emails
+
+	var err error
+	if len(parseErrors) > 0 {
+		err = oops.Errorf("timestamp parse warnings: %s", strings.Join(parseErrors, "; "))
+	}
+	return emails, err
 }
 
 // convertFullEmail converts a JMAP email with full properties to a domain Email.
-func convertFullEmail(je jmap.Email) Email {
-	email := convertEmails([]jmap.Email{je})[0]
+func convertFullEmail(je jmap.Email) (Email, error) {
+	emails, parseErr := convertEmails([]jmap.Email{je})
+	email := emails[0]
 
 	if len(je.From) > 0 {
 		email.From = EmailAddress{Name: je.From[0].Name, Email: je.From[0].Email}
@@ -622,7 +654,7 @@ func convertFullEmail(je jmap.Email) Email {
 
 	email.Attachments = convertJMAPAttachments(je.Attachments)
 
-	return email
+	return email, parseErr
 }
 
 // convertJMAPAddressToDomain converts JMAP email addresses to domain addresses.
@@ -664,7 +696,7 @@ type SendOptions struct {
 func (s *MailService) Send(ctx context.Context, opts SendOptions) (string, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return "", err
+		return "", oops.Wrapf(err, "sending email")
 	}
 
 	// Get the default identity for sending
@@ -697,7 +729,7 @@ type ReplyOptions struct {
 func (s *MailService) Reply(ctx context.Context, opts ReplyOptions) (string, error) {
 	accountID, err := s.client.getAccountID(ctx)
 	if err != nil {
-		return "", err
+		return "", oops.Wrapf(err, "replying to email")
 	}
 
 	// Get the default identity

@@ -686,6 +686,95 @@ func TestMailService_SearchWithFilter_ResolvesInMailboxInConditions(t *testing.T
 	assert.Empty(t, emails)
 }
 
+func TestMailService_SearchWithFilter_DoesNotMutateCallerFilter(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if methodName == testMethodMailboxGet {
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-inbox", "name": "Inbox", "role": "inbox"},
+							{"id": "mb-drafts", "name": "Drafts", "role": "drafts"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+			return
+		}
+
+		if methodName == "Email/query" {
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/query", {
+						"accountId": "acc1",
+						"queryState": "q1",
+						"canCalculateChanges": true,
+						"position": 0,
+						"ids": [],
+						"total": 0
+					}, "0"],
+					["Email/get", {
+						"accountId": "acc1",
+						"state": "e1",
+						"list": [],
+						"notFound": []
+					}, "1"]
+				]
+			}`))
+			return
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	t.Run("top-level inMailbox is not mutated", func(t *testing.T) {
+		filter := map[string]any{
+			"inMailbox": "Inbox",
+			"from":      "alice@example.com",
+		}
+		_, err := client.Mail().SearchWithFilter(ctx, filter, 10)
+		require.NoError(t, err)
+		assert.Equal(t, "Inbox", filter["inMailbox"], "caller's filter map should not be mutated")
+	})
+
+	t.Run("nested conditions inMailbox is not mutated", func(t *testing.T) {
+		conditions := []map[string]any{
+			{"inMailbox": "Drafts"},
+			{"from": "bob@example.com"},
+		}
+		filter := map[string]any{
+			"operator":   "AND",
+			"conditions": conditions,
+		}
+		_, err := client.Mail().SearchWithFilter(ctx, filter, 10)
+		require.NoError(t, err)
+		assert.Equal(t, "Drafts", conditions[0]["inMailbox"], "caller's nested condition should not be mutated")
+	})
+}
+
 func TestMailService_Move(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
@@ -772,6 +861,107 @@ func TestMailService_Move(t *testing.T) {
 
 	err := client.Mail().Move(ctx, "email-to-move", "Archive")
 	require.NoError(t, err)
+}
+
+func TestMailService_Move_NoRedundantGet(t *testing.T) {
+	// Track all JMAP method names across requests to verify Move does NOT
+	// make a redundant Email/get call before Email/set.
+	var allMethods []string
+
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		var req map[string]any
+		err = json.Unmarshal(body, &req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		// Record every method call in the request
+		for _, mc := range methodCalls {
+			call := mc.([]any)
+			allMethods = append(allMethods, call[0].(string))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		switch methodName {
+		case testMethodMailboxGet:
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-inbox", "name": "Inbox", "role": "inbox"},
+							{"id": "mb-archive", "name": "Archive", "role": "archive"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case testMethodEmailSet:
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/set", {
+						"accountId": "acc1",
+						"oldState": "e1",
+						"newState": "e2",
+						"updated": {"email-123": null}
+					}, "0"]
+				]
+			}`))
+		case testMethodEmailGet:
+			// This handler exists so the test doesn't crash if the redundant
+			// Get call is still present, but we assert below that it should
+			// never be reached.
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/get", {
+						"accountId": "acc1",
+						"state": "e1",
+						"list": [
+							{
+								"id": "email-123",
+								"threadId": "t1",
+								"subject": "Test",
+								"preview": "...",
+								"receivedAt": "2024-01-15T10:30:00Z",
+								"size": 100,
+								"keywords": {},
+								"mailboxIds": {"mb-inbox": true}
+							}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	err := client.Mail().Move(ctx, "email-123", "Archive")
+	require.NoError(t, err)
+
+	// Move should only issue Mailbox/get (to resolve folder) + Email/set.
+	// It must NOT make a redundant Email/get call to validate existence.
+	assert.Equal(t, []string{testMethodMailboxGet, testMethodEmailSet}, allMethods,
+		"Move should only call Mailbox/get and Email/set, not Email/get")
 }
 
 func TestMailService_Delete_MovesToTrash(t *testing.T) {
@@ -943,6 +1133,169 @@ func TestMailService_Delete_PermanentlyDestroysFromTrash(t *testing.T) {
 
 	err := client.Mail().Delete(ctx, "email-in-trash")
 	require.NoError(t, err)
+}
+
+func TestMailService_Delete_TransientErrorNotDestroy(t *testing.T) {
+	// When resolveMailbox fails for a transient reason (e.g., server error),
+	// Delete must propagate the error — NOT fall through to permanent deletion.
+	callCount := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		switch methodName {
+		case testMethodEmailGet:
+			// Return a valid email so Get() succeeds
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/get", {
+						"accountId": "acc1",
+						"state": "e1",
+						"list": [
+							{
+								"id": "email-123",
+								"threadId": "t1",
+								"subject": "Important",
+								"preview": "...",
+								"receivedAt": "2024-01-15T10:30:00Z",
+								"size": 100,
+								"keywords": {},
+								"mailboxIds": {"mb-inbox": true}
+							}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case testMethodMailboxGet:
+			// Simulate a transient server error (500)
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`Internal Server Error`))
+		case testMethodEmailSet:
+			callCount++
+			// Should NOT be reached — if it is, destroy was called
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/set", {
+						"accountId": "acc1",
+						"oldState": "e1",
+						"newState": "e2",
+						"destroyed": ["email-123"]
+					}, "0"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	err := client.Mail().Delete(ctx, "email-123")
+	require.Error(t, err, "Delete should propagate transient error, not silently destroy")
+	assert.Equal(t, 0, callCount, "Email/set (destroy) should not be called on transient error")
+}
+
+func TestMailService_Delete_MailboxNotFound_Destroys(t *testing.T) {
+	// When the Trash mailbox genuinely does not exist (ErrMailboxNotFound),
+	// Delete should fall through to permanent destroy.
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		switch methodName {
+		case testMethodEmailGet:
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/get", {
+						"accountId": "acc1",
+						"state": "e1",
+						"list": [
+							{
+								"id": "email-456",
+								"threadId": "t1",
+								"subject": "No Trash Here",
+								"preview": "...",
+								"receivedAt": "2024-01-15T10:30:00Z",
+								"size": 100,
+								"keywords": {},
+								"mailboxIds": {"mb-inbox": true}
+							}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case testMethodMailboxGet:
+			// Return mailboxes WITHOUT a Trash folder
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-inbox", "name": "Inbox", "role": "inbox"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case testMethodEmailSet:
+			args := firstCall[1].(map[string]any)
+			destroy, hasDestroy := args["destroy"].([]any)
+			assert.True(t, hasDestroy, "expected destroy operation")
+			assert.Contains(t, destroy, "email-456")
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/set", {
+						"accountId": "acc1",
+						"oldState": "e1",
+						"newState": "e2",
+						"destroyed": ["email-456"]
+					}, "0"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	err := client.Mail().Delete(ctx, "email-456")
+	require.NoError(t, err, "Delete should permanently destroy when Trash mailbox not found")
 }
 
 func TestClient_Connect(t *testing.T) {
@@ -1325,6 +1678,72 @@ func TestMailService_SetKeywords(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestMailService_SetKeywords_RemovalUsesNull(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		var req map[string]any
+		err = json.Unmarshal(body, &req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, testMethodEmailSet, methodName)
+
+		// Verify the update payload
+		args := firstCall[1].(map[string]any)
+		update := args["update"].(map[string]any)
+		emailUpdate := update["email-kw-test"].(map[string]any)
+
+		// Per RFC 8621 §4.1.1: setting a keyword uses true,
+		// removing a keyword uses null (not false)
+		assert.Equal(t, true, emailUpdate["keywords/$flagged"],
+			"setting a keyword should send true")
+		assert.Nil(t, emailUpdate["keywords/$seen"],
+			"removing a keyword should send null (nil), not false")
+
+		// Also verify the raw JSON to be certain: $seen must be null, not false
+		rawPatch := json.RawMessage(body)
+		assert.Contains(t, string(rawPatch), `"keywords/$seen":null`,
+			"raw JSON should contain null for removed keyword, not false")
+		assert.NotContains(t, string(rawPatch), `"keywords/$seen":false`,
+			"raw JSON must not contain false for removed keyword")
+
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Email/set", {
+					"accountId": "acc1",
+					"oldState": "e1",
+					"newState": "e2",
+					"updated": {"email-kw-test": null}
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	keywords := map[string]bool{
+		"$seen":    false, // remove: should produce null in JSON
+		"$flagged": true,  // set: should produce true in JSON
+	}
+	err := client.Mail().SetKeywords(ctx, "email-kw-test", keywords)
+	require.NoError(t, err)
+}
+
 func TestMailService_SetKeywords_NotUpdated(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1520,7 +1939,7 @@ func TestMailService_GetRaw_NoBlobID(t *testing.T) {
 }
 
 func TestConvertEmails_InvalidReceivedAt(t *testing.T) {
-	emails := convertEmails([]jmap.Email{
+	emails, err := convertEmails([]jmap.Email{
 		{
 			ID:         "em1",
 			Subject:    "Valid date",
@@ -1544,18 +1963,133 @@ func TestConvertEmails_InvalidReceivedAt(t *testing.T) {
 		},
 	})
 
+	// All emails should be returned even when some have parse errors
 	require.Len(t, emails, 3)
+
+	// Error should be non-nil because em2 has invalid timestamp
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "em2")
+	assert.Contains(t, err.Error(), "not-a-date")
 
 	// Valid date should parse correctly
 	assert.Equal(t, "em1", emails[0].ID)
 	assert.False(t, emails[0].ReceivedAt.IsZero())
 
-	// Invalid date should not panic, email should still be returned
+	// Invalid date should not panic, email should still be returned with zero time
 	assert.Equal(t, "em2", emails[1].ID)
 	assert.Equal(t, "Invalid date", emails[1].Subject)
 	assert.True(t, emails[1].ReceivedAt.IsZero())
 
-	// Empty date should result in zero time
+	// Empty date should result in zero time (not an error)
 	assert.Equal(t, "em3", emails[2].ID)
 	assert.True(t, emails[2].ReceivedAt.IsZero())
+}
+
+func TestConvertEmails_AllValidTimestamps(t *testing.T) {
+	emails, err := convertEmails([]jmap.Email{
+		{
+			ID:         "em1",
+			Subject:    "First",
+			ReceivedAt: "2024-01-15T10:30:00Z",
+			Keywords:   map[string]bool{},
+			MailboxIDs: map[string]bool{"mb1": true},
+		},
+		{
+			ID:         "em2",
+			Subject:    "Second",
+			ReceivedAt: "2024-02-20T14:00:00Z",
+			Keywords:   map[string]bool{},
+			MailboxIDs: map[string]bool{"mb1": true},
+		},
+	})
+
+	// When all timestamps are valid, error should be nil
+	require.NoError(t, err)
+	require.Len(t, emails, 2)
+	assert.False(t, emails[0].ReceivedAt.IsZero())
+	assert.False(t, emails[1].ReceivedAt.IsZero())
+}
+
+func TestConvertEmails_EmptyInput(t *testing.T) {
+	emails, err := convertEmails([]jmap.Email{})
+	require.NoError(t, err)
+	assert.Empty(t, emails)
+}
+
+func TestGetAccountID_ErrorWrapping(t *testing.T) {
+	// Session server that always returns 500 to force getAccountID failure.
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer sessionServer.Close()
+
+	// Client with no cached accountID, so getAccountID must hit session endpoint.
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		call    func() error
+		wantCtx string
+	}{
+		{
+			name:    "Mail.List wraps getAccountID error",
+			call:    func() error { _, err := client.Mail().List(ctx, "Inbox", 10); return err },
+			wantCtx: "listing emails",
+		},
+		{
+			name:    "Mail.Get wraps getAccountID error",
+			call:    func() error { _, err := client.Mail().Get(ctx, "id1"); return err },
+			wantCtx: "getting email",
+		},
+		{
+			name:    "Mail.Move wraps getAccountID error",
+			call:    func() error { return client.Mail().Move(ctx, "id1", "Archive") },
+			wantCtx: "moving email",
+		},
+		{
+			name:    "Mail.Delete wraps getAccountID error",
+			call:    func() error { return client.Mail().Delete(ctx, "id1") },
+			wantCtx: "deleting email",
+		},
+		{
+			name:    "Mail.Send wraps getAccountID error",
+			call:    func() error { _, err := client.Mail().Send(ctx, SendOptions{}); return err },
+			wantCtx: "sending email",
+		},
+		{
+			name:    "Mailbox.List wraps getAccountID error",
+			call:    func() error { _, err := client.Mailbox().List(ctx); return err },
+			wantCtx: "listing mailboxes",
+		},
+		{
+			name:    "Identity.List wraps getAccountID error",
+			call:    func() error { _, err := client.Identity().List(ctx); return err },
+			wantCtx: "listing identities",
+		},
+		{
+			name:    "Thread.Get wraps getAccountID error",
+			call:    func() error { _, err := client.Thread().Get(ctx, "t1"); return err },
+			wantCtx: "getting thread",
+		},
+		{
+			name:    "Vacation.Get wraps getAccountID error",
+			call:    func() error { _, err := client.Vacation().Get(ctx); return err },
+			wantCtx: "getting vacation response",
+		},
+		{
+			name:    "MaskedEmail.List wraps getAccountID error",
+			call:    func() error { _, err := client.MaskedEmail().List(ctx); return err },
+			wantCtx: "listing masked emails",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantCtx, "error should contain operation context")
+			assert.Contains(t, err.Error(), "getting session", "error should contain underlying cause")
+		})
+	}
 }

@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
 
@@ -456,35 +459,32 @@ func TestHelperFunctions(t *testing.T) {
 			"name": "test",
 		}
 
-		if got := getStringArg(args, "name", "default"); got != "test" {
-			t.Errorf("expected 'test', got %q", got)
-		}
-		if got := getStringArg(args, "missing", "default"); got != "default" {
-			t.Errorf("expected 'default', got %q", got)
-		}
+		got, err := getStringArg(args, "name", "default")
+		require.NoError(t, err)
+		assert.Equal(t, "test", got)
+
+		got, err = getStringArg(args, "missing", "default")
+		require.NoError(t, err)
+		assert.Equal(t, "default", got)
 	})
 
 	t.Run("getUint64Arg", func(t *testing.T) {
 		args := map[string]any{
-			"float":   float64(42),
-			"int":     int(42),
-			"int64":   int64(42),
-			"uint64":  uint64(42),
-			"invalid": "not a number",
+			"float":  float64(42),
+			"int":    int(42),
+			"int64":  int64(42),
+			"uint64": uint64(42),
 		}
 
 		for _, key := range []string{"float", "int", "int64", "uint64"} {
-			if got := getUint64Arg(args, key, 0); got != 42 {
-				t.Errorf("getUint64Arg(%s): expected 42, got %d", key, got)
-			}
+			got, err := getUint64Arg(args, key, 0)
+			require.NoError(t, err)
+			assert.Equal(t, uint64(42), got, "getUint64Arg(%s)", key)
 		}
 
-		if got := getUint64Arg(args, "invalid", 10); got != 10 {
-			t.Errorf("expected default 10, got %d", got)
-		}
-		if got := getUint64Arg(args, "missing", 10); got != 10 {
-			t.Errorf("expected default 10, got %d", got)
-		}
+		got, err := getUint64Arg(args, "missing", 10)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(10), got)
 	})
 
 	t.Run("getBoolArg", func(t *testing.T) {
@@ -493,15 +493,17 @@ func TestHelperFunctions(t *testing.T) {
 			"false": false,
 		}
 
-		if got := getBoolArg(args, "true", false); !got {
-			t.Error("expected true")
-		}
-		if got := getBoolArg(args, "false", true); got {
-			t.Error("expected false")
-		}
-		if got := getBoolArg(args, "missing", true); !got {
-			t.Error("expected default true")
-		}
+		got, err := getBoolArg(args, "true", false)
+		require.NoError(t, err)
+		assert.True(t, got)
+
+		got, err = getBoolArg(args, "false", true)
+		require.NoError(t, err)
+		assert.False(t, got)
+
+		got, err = getBoolArg(args, "missing", true)
+		require.NoError(t, err)
+		assert.True(t, got)
 	})
 
 	t.Run("getStringSliceArg", func(t *testing.T) {
@@ -510,15 +512,133 @@ func TestHelperFunctions(t *testing.T) {
 			"anys":    []any{"c", "d"},
 		}
 
-		if got := getStringSliceArg(args, "strings"); len(got) != 2 || got[0] != "a" {
-			t.Errorf("expected [a b], got %v", got)
-		}
-		if got := getStringSliceArg(args, "anys"); len(got) != 2 || got[0] != "c" {
-			t.Errorf("expected [c d], got %v", got)
-		}
-		if got := getStringSliceArg(args, "missing"); got != nil {
-			t.Errorf("expected nil, got %v", got)
-		}
+		got, err := getStringSliceArg(args, "strings")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, got)
+
+		got, err = getStringSliceArg(args, "anys")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"c", "d"}, got)
+
+		got, err = getStringSliceArg(args, "missing")
+		require.NoError(t, err)
+		assert.Nil(t, got)
+	})
+}
+
+func TestHelperFunctions_TypeMismatch(t *testing.T) {
+	t.Run("getStringArg returns error on wrong type", func(t *testing.T) {
+		args := map[string]any{"id": 12345}
+		val, err := getStringArg(args, "id", "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a string")
+		assert.Contains(t, err.Error(), "id")
+		assert.Empty(t, val)
+	})
+
+	t.Run("getStringArg returns default when key absent", func(t *testing.T) {
+		args := map[string]any{}
+		val, err := getStringArg(args, "id", "default")
+		require.NoError(t, err)
+		assert.Equal(t, "default", val)
+	})
+
+	t.Run("getStringArg returns value when type correct", func(t *testing.T) {
+		args := map[string]any{"id": "abc"}
+		val, err := getStringArg(args, "id", "")
+		require.NoError(t, err)
+		assert.Equal(t, "abc", val)
+	})
+
+	t.Run("getUint64Arg returns error on wrong type", func(t *testing.T) {
+		args := map[string]any{"limit": "not-a-number"}
+		val, err := getUint64Arg(args, "limit", 10)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a number")
+		assert.Contains(t, err.Error(), "limit")
+		assert.Equal(t, uint64(0), val)
+	})
+
+	t.Run("getUint64Arg returns default when key absent", func(t *testing.T) {
+		args := map[string]any{}
+		val, err := getUint64Arg(args, "limit", 10)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(10), val)
+	})
+
+	t.Run("getUint64Arg returns value for float64", func(t *testing.T) {
+		args := map[string]any{"limit": float64(42)}
+		val, err := getUint64Arg(args, "limit", 0)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(42), val)
+	})
+
+	t.Run("getUint64Arg returns error on negative float64", func(t *testing.T) {
+		args := map[string]any{"limit": float64(-1)}
+		val, err := getUint64Arg(args, "limit", 10)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be non-negative")
+		assert.Equal(t, uint64(0), val)
+	})
+
+	t.Run("getBoolArg returns error on wrong type", func(t *testing.T) {
+		args := map[string]any{"flag": "true"}
+		val, err := getBoolArg(args, "flag", false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a boolean")
+		assert.Contains(t, err.Error(), "flag")
+		assert.False(t, val)
+	})
+
+	t.Run("getBoolArg returns default when key absent", func(t *testing.T) {
+		args := map[string]any{}
+		val, err := getBoolArg(args, "flag", true)
+		require.NoError(t, err)
+		assert.True(t, val)
+	})
+
+	t.Run("getBoolArg returns value when type correct", func(t *testing.T) {
+		args := map[string]any{"flag": true}
+		val, err := getBoolArg(args, "flag", false)
+		require.NoError(t, err)
+		assert.True(t, val)
+	})
+
+	t.Run("getStringSliceArg returns error on non-string elements", func(t *testing.T) {
+		args := map[string]any{"tags": []any{"ok", 123, "also-ok"}}
+		val, err := getStringSliceArg(args, "tags")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must contain only strings")
+		assert.Nil(t, val)
+	})
+
+	t.Run("getStringSliceArg returns error on wrong type", func(t *testing.T) {
+		args := map[string]any{"tags": "not-a-slice"}
+		val, err := getStringSliceArg(args, "tags")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be an array")
+		assert.Nil(t, val)
+	})
+
+	t.Run("getStringSliceArg returns nil when key absent", func(t *testing.T) {
+		args := map[string]any{}
+		val, err := getStringSliceArg(args, "tags")
+		require.NoError(t, err)
+		assert.Nil(t, val)
+	})
+
+	t.Run("getStringSliceArg returns value for []string", func(t *testing.T) {
+		args := map[string]any{"tags": []string{"a", "b"}}
+		val, err := getStringSliceArg(args, "tags")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, val)
+	})
+
+	t.Run("getStringSliceArg returns value for []any with strings", func(t *testing.T) {
+		args := map[string]any{"tags": []any{"c", "d"}}
+		val, err := getStringSliceArg(args, "tags")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"c", "d"}, val)
 	})
 }
 
@@ -635,6 +755,53 @@ func TestRegisterResourcesWithCalendar(t *testing.T) {
 	if _, ok := server.resources["fastmail://calendars"]; !ok {
 		t.Error("expected fastmail://calendars resource to be registered")
 	}
+}
+
+func TestMailFlagHandler_MutualExclusivity(t *testing.T) {
+	handler := makeMailFlagHandler(ToolsConfig{})
+
+	t.Run("read and unread are mutually exclusive", func(t *testing.T) {
+		_, err := handler(t.Context(), map[string]any{
+			"id":     "msg-1",
+			"read":   true,
+			"unread": true,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "mutually exclusive")
+	})
+
+	t.Run("flagged and unflagged are mutually exclusive", func(t *testing.T) {
+		_, err := handler(t.Context(), map[string]any{
+			"id":        "msg-1",
+			"flagged":   true,
+			"unflagged": true,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "mutually exclusive")
+	})
+
+	t.Run("read alone passes validation", func(t *testing.T) {
+		// With nil client, handler will panic past validation when calling SetKeywords.
+		// A panic (not an error) confirms validation was passed successfully.
+		assert.Panics(t, func() {
+			_, _ = handler(t.Context(), map[string]any{
+				"id":   "msg-1",
+				"read": true,
+			})
+		})
+	})
+
+	t.Run("read and flagged together pass validation", func(t *testing.T) {
+		// With nil client, handler will panic past validation when calling SetKeywords.
+		// A panic (not an error) confirms validation was passed successfully.
+		assert.Panics(t, func() {
+			_, _ = handler(t.Context(), map[string]any{
+				"id":      "msg-1",
+				"read":    true,
+				"flagged": true,
+			})
+		})
+	})
 }
 
 func TestParseAddresses(t *testing.T) {

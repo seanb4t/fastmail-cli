@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/samber/oops"
 )
 
 // Client is a JMAP protocol client.
@@ -65,7 +67,7 @@ func NewClient(endpoint, accessToken string, opts ...ClientOption) *Client {
 func (c *Client) Authenticate(ctx context.Context) (*Session, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint, http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, oops.Wrapf(err, "creating request")
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.accessToken)
@@ -73,7 +75,7 @@ func (c *Client) Authenticate(ctx context.Context) (*Session, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
+		return nil, oops.Wrapf(err, "executing request")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -84,7 +86,7 @@ func (c *Client) Authenticate(ctx context.Context) (*Session, error) {
 
 	var session Session
 	if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
-		return nil, fmt.Errorf("decoding session: %w", err)
+		return nil, oops.Wrapf(err, "decoding session")
 	}
 
 	// Cache the session
@@ -113,17 +115,17 @@ func (c *Client) Session(ctx context.Context) (*Session, error) {
 func (c *Client) Call(ctx context.Context, request *Request) (*Response, error) {
 	session, err := c.Session(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting session: %w", err)
+		return nil, oops.Wrapf(err, "getting session")
 	}
 
 	reqBody, err := json.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling request: %w", err)
+		return nil, oops.Wrapf(err, "marshaling request")
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, session.APIURL, bytes.NewReader(reqBody))
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, oops.Wrapf(err, "creating request")
 	}
 
 	httpReq.Header.Set("Authorization", "Bearer "+c.accessToken)
@@ -132,7 +134,7 @@ func (c *Client) Call(ctx context.Context, request *Request) (*Response, error) 
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
+		return nil, oops.Wrapf(err, "executing request")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -143,7 +145,7 @@ func (c *Client) Call(ctx context.Context, request *Request) (*Response, error) 
 
 	var response Response
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+		return nil, oops.Wrapf(err, "decoding response")
 	}
 
 	return &response, nil
@@ -153,7 +155,7 @@ func (c *Client) Call(ctx context.Context, request *Request) (*Response, error) 
 func (c *Client) DownloadBlob(ctx context.Context, accountID, blobID string) (io.ReadCloser, error) {
 	session, err := c.Session(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting session: %w", err)
+		return nil, oops.Wrapf(err, "getting session")
 	}
 
 	url := session.DownloadURL
@@ -164,13 +166,13 @@ func (c *Client) DownloadBlob(ctx context.Context, accountID, blobID string) (io
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, oops.Wrapf(err, "creating request")
 	}
 	req.Header.Set("Authorization", "Bearer "+c.accessToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("downloading blob: %w", err)
+		return nil, oops.Wrapf(err, "downloading blob")
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
