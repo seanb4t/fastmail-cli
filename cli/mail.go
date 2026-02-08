@@ -30,6 +30,7 @@ func newMailCommand() *cobra.Command {
 	cmd.AddCommand(newMailMoveCommand())
 	cmd.AddCommand(newMailDeleteCommand())
 	cmd.AddCommand(newMailFlagCommand())
+	cmd.AddCommand(newMailThreadCommand())
 
 	return cmd
 }
@@ -463,6 +464,65 @@ func outputDeleteResult(cmd *cobra.Command, emailID string) error {
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email %s deleted\n", emailID)
+	return nil
+}
+
+// newMailThreadCommand creates the mail thread command.
+func newMailThreadCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "thread THREAD_ID",
+		Short: "Show all emails in a thread",
+		Long:  "Display all emails in a conversation thread, ordered chronologically.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			threadID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			emails, err := client.Mail().GetThread(ctx, threadID)
+			if err != nil {
+				return fmt.Errorf("getting thread: %w", err)
+			}
+
+			return outputThread(cmd, emails)
+		},
+	}
+
+	return cmd
+}
+
+// outputThread writes the thread emails to output.
+func outputThread(cmd *cobra.Command, emails []fastmail.Email) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(emails)
+	}
+
+	w := cmd.OutOrStdout()
+	for i, e := range emails {
+		_, _ = fmt.Fprintf(w, "--- Email %d of %d ---\n", i+1, len(emails))
+		_, _ = fmt.Fprintf(w, "ID:      %s\n", e.ID)
+		_, _ = fmt.Fprintf(w, "Subject: %s\n", e.Subject)
+		_, _ = fmt.Fprintf(w, "Date:    %s\n", e.ReceivedAt.Format("2006-01-02 15:04:05"))
+		if e.Preview != "" {
+			_, _ = fmt.Fprintf(w, "Preview: %s\n", e.Preview)
+		}
+		_, _ = fmt.Fprintln(w)
+	}
+
 	return nil
 }
 

@@ -32,6 +32,8 @@ func RegisterMailTools(s *Server, cfg ToolsConfig) {
 	registerMaskedEmailTools(s, cfg)
 	registerContactTools(s, cfg)
 	registerCalendarTools(s, cfg)
+	registerVacationTools(s, cfg)
+	registerAccountTools(s, cfg)
 }
 
 // registerMailTools registers email tools.
@@ -98,6 +100,14 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 			WithProperty("id", "string", "The email ID").
 			WithRequired("id"),
 		makeMailDeleteHandler(cfg),
+	)
+
+	// mail_thread - Get all emails in a conversation thread
+	s.RegisterTool(
+		NewTool("mail_thread", "Get all emails in a conversation thread").
+			WithProperty("thread_id", "string", "The thread ID").
+			WithRequired("thread_id"),
+		makeMailThreadHandler(cfg),
 	)
 
 	// mail_flag - Set or remove flags/keywords on an email
@@ -262,6 +272,22 @@ func makeMailDeleteHandler(cfg ToolsConfig) ToolHandler {
 			"id":     id,
 			"status": "deleted",
 		}, nil
+	}
+}
+
+func makeMailThreadHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		threadID := getStringArg(args, "thread_id", "")
+		if threadID == "" {
+			return nil, oops.Errorf("thread_id is required")
+		}
+
+		emails, err := cfg.Client.Mail().GetThread(ctx, threadID)
+		if err != nil {
+			return nil, oops.Wrapf(err, "getting thread")
+		}
+
+		return convertEmailsToMCP(emails), nil
 	}
 }
 

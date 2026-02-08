@@ -154,6 +154,75 @@ func TestEmailChangesResponse_Decode(t *testing.T) {
 	assert.Equal(t, []string{"email-deleted"}, resp.Destroyed)
 }
 
+func TestThreadGetArgs_WithIDs(t *testing.T) {
+	args := NewThreadGet("account-1").
+		IDs("thread-1", "thread-2").
+		Build()
+
+	assert.Equal(t, "account-1", args["accountId"])
+	assert.Equal(t, []string{"thread-1", "thread-2"}, args["ids"])
+}
+
+func TestThreadGetArgs_MinimalBuild(t *testing.T) {
+	args := NewThreadGet("account-1").Build()
+
+	assert.Equal(t, "account-1", args["accountId"])
+	_, hasIDs := args["ids"]
+	assert.False(t, hasIDs, "ids should not be present when none are set")
+}
+
+func TestThreadGetResponse_Decode(t *testing.T) {
+	responseJSON := `{
+		"accountId": "A1",
+		"state": "t789",
+		"list": [
+			{
+				"id": "thread-1",
+				"emailIds": ["email-a", "email-b", "email-c"]
+			}
+		],
+		"notFound": ["thread-missing"]
+	}`
+
+	var resp ThreadGetResponse
+	err := json.Unmarshal([]byte(responseJSON), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "A1", resp.AccountID)
+	assert.Equal(t, "t789", resp.State)
+	require.Len(t, resp.List, 1)
+	assert.Equal(t, "thread-1", resp.List[0].ID)
+	assert.Equal(t, []string{"email-a", "email-b", "email-c"}, resp.List[0].EmailIDs)
+	assert.Equal(t, []string{"thread-missing"}, resp.NotFound)
+}
+
+func TestThreadGetResponse_DecodeMultipleThreads(t *testing.T) {
+	responseJSON := `{
+		"accountId": "A1",
+		"state": "t100",
+		"list": [
+			{
+				"id": "thread-1",
+				"emailIds": ["email-1"]
+			},
+			{
+				"id": "thread-2",
+				"emailIds": ["email-2", "email-3"]
+			}
+		],
+		"notFound": []
+	}`
+
+	var resp ThreadGetResponse
+	err := json.Unmarshal([]byte(responseJSON), &resp)
+	require.NoError(t, err)
+
+	require.Len(t, resp.List, 2)
+	assert.Equal(t, "thread-1", resp.List[0].ID)
+	assert.Equal(t, "thread-2", resp.List[1].ID)
+	assert.Len(t, resp.List[1].EmailIDs, 2)
+}
+
 func TestEmailQueryThenGet_ResultReference(t *testing.T) {
 	// Test the pattern: Email/query -> Email/get using result references
 	req := NewRequest().

@@ -427,6 +427,86 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 	return emails
 }
 
+// GetThread returns all emails in a thread, sorted chronologically (oldest first).
+func (s *MailService) GetThread(ctx context.Context, threadID string) ([]Email, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 1: Thread/get to get the email IDs in the thread
+	threadBuilder := jmap.NewThreadGet(accountID).IDs(threadID)
+
+	threadReq := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	threadCallID := threadReq.Invoke("Thread/get", threadBuilder.Build())
+
+	threadResp, err := s.client.jmap.Call(ctx, threadReq)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing Thread/get request")
+	}
+
+	threadResult, err := threadResp.GetResult(threadCallID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting thread result")
+	}
+	if threadResult.IsError() {
+		return nil, oops.Errorf("thread get failed: %s", threadResult.Error())
+	}
+
+	var threadGetResp jmap.ThreadGetResponse
+	if err := threadResult.Decode(&threadGetResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding thread response")
+	}
+
+	if len(threadGetResp.NotFound) > 0 {
+		return nil, oops.Errorf("thread not found: %s", threadID)
+	}
+
+	if len(threadGetResp.List) == 0 {
+		return nil, oops.Errorf("thread not found: %s", threadID)
+	}
+
+	emailIDs := threadGetResp.List[0].EmailIDs
+	if len(emailIDs) == 0 {
+		return []Email{}, nil
+	}
+
+	// Step 2: Email/get to fetch the actual emails
+	getBuilder := jmap.NewEmailGet(accountID).
+		IDs(emailIDs...).
+		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+
+	emailReq := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	emailCallID := emailReq.Invoke("Email/get", getBuilder.Build())
+
+	emailResp, err := s.client.jmap.Call(ctx, emailReq)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing Email/get request")
+	}
+
+	emailResult, err := emailResp.GetResult(emailCallID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting email result")
+	}
+	if emailResult.IsError() {
+		return nil, oops.Errorf("email get failed: %s", emailResult.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := emailResult.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding email response")
+	}
+
+	emails := convertEmails(getResp.List)
+
+	// Sort chronologically (oldest first) by ReceivedAt
+	slices.SortFunc(emails, func(a, b Email) int {
+		return a.ReceivedAt.Compare(b.ReceivedAt)
+	})
+
+	return emails, nil
+}
+
 // KeywordAction represents a keyword change to apply to an email.
 type KeywordAction struct {
 	// Keyword is the JMAP keyword (e.g., "$seen", "$flagged").

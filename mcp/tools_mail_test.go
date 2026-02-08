@@ -25,6 +25,7 @@ func TestRegisterMailTools(t *testing.T) {
 		"mail_move",
 		"mail_delete",
 		"mail_flag",
+		"mail_thread",
 		"mailbox_list",
 		"mailbox_create",
 		"mailbox_rename",
@@ -41,6 +42,9 @@ func TestRegisterMailTools(t *testing.T) {
 		"contacts_delete",
 		"calendar_events",
 		"calendar_create",
+		"vacation_status",
+		"vacation_set",
+		"quota_get",
 	}
 
 	for _, name := range expectedTools {
@@ -596,5 +600,53 @@ func TestMailFlagTool_RejectsEmptyKeywords(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for empty keywords")
+	}
+}
+
+func TestMailThreadTool(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_thread"]
+	if !ok {
+		t.Fatal("mail_thread tool not found")
+	}
+
+	// Verify tool definition
+	if rt.tool.Name != "mail_thread" {
+		t.Errorf("expected name %q, got %q", "mail_thread", rt.tool.Name)
+	}
+
+	if rt.tool.Description != "Get all emails in a conversation thread" {
+		t.Errorf("unexpected description: %s", rt.tool.Description)
+	}
+
+	// Verify input schema has expected properties
+	if _, ok := rt.tool.InputSchema.Properties["thread_id"]; !ok {
+		t.Error("expected 'thread_id' property in input schema")
+	}
+
+	// Verify required fields
+	if !slices.Contains(rt.tool.InputSchema.Required, "thread_id") {
+		t.Error("expected 'thread_id' to be required")
+	}
+}
+
+func TestMailThreadTool_RequiresThreadID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["mail_thread"]
+	if !ok {
+		t.Fatal("mail_thread tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing thread_id")
+	}
+	if err.Error() != "thread_id is required" {
+		t.Errorf("expected 'thread_id is required', got %q", err.Error())
 	}
 }

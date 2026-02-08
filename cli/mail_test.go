@@ -21,7 +21,7 @@ func TestMailHelp_ShowsSubcommands(t *testing.T) {
 	output := buf.String()
 
 	// Should show all subcommands
-	subcommands := []string{"list", "send", "reply", "show", "search", "move", "delete", "flag"}
+	subcommands := []string{"list", "send", "reply", "show", "search", "move", "delete", "flag", "thread"}
 	for _, sub := range subcommands {
 		if !strings.Contains(output, sub) {
 			t.Errorf("expected %q subcommand in help, got: %q", sub, output)
@@ -399,5 +399,40 @@ func TestMailDelete_HelpShowsUsage(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "EMAIL_ID") {
 		t.Error("expected 'EMAIL_ID' in delete help usage")
+	}
+}
+
+func TestMailThread_RequiresID(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "thread"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail thread without ID should error")
+	}
+
+	if !strings.Contains(err.Error(), "arg") {
+		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailThread_HelpShowsUsage(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "thread", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail thread --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "THREAD_ID") {
+		t.Error("expected 'THREAD_ID' in thread help usage")
 	}
 }

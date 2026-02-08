@@ -1022,3 +1022,144 @@ func TestMailService_Reply(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "reply-email-456", replyID)
 }
+
+func TestMailService_GetThread(t *testing.T) {
+	requestNum := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+		requestNum++
+
+		switch methodName {
+		case "Thread/get":
+			// Verify the thread ID is passed correctly
+			args := firstCall[1].(map[string]any)
+			ids := args["ids"].([]any)
+			assert.Equal(t, "thread-abc", ids[0])
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Thread/get", {
+						"accountId": "acc1",
+						"state": "t1",
+						"list": [
+							{
+								"id": "thread-abc",
+								"emailIds": ["email-1", "email-2", "email-3"]
+							}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case testMethodEmailGet:
+			// Return the emails in the thread (intentionally out of chronological order)
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/get", {
+						"accountId": "acc1",
+						"state": "e1",
+						"list": [
+							{
+								"id": "email-2",
+								"threadId": "thread-abc",
+								"subject": "Re: Thread Subject",
+								"preview": "Second email",
+								"receivedAt": "2024-01-15T12:00:00Z",
+								"size": 2000,
+								"keywords": {"$seen": true},
+								"mailboxIds": {"mb-inbox": true}
+							},
+							{
+								"id": "email-1",
+								"threadId": "thread-abc",
+								"subject": "Thread Subject",
+								"preview": "First email",
+								"receivedAt": "2024-01-15T10:00:00Z",
+								"size": 1000,
+								"keywords": {"$seen": true},
+								"mailboxIds": {"mb-inbox": true}
+							},
+							{
+								"id": "email-3",
+								"threadId": "thread-abc",
+								"subject": "Re: Re: Thread Subject",
+								"preview": "Third email",
+								"receivedAt": "2024-01-15T14:00:00Z",
+								"size": 3000,
+								"keywords": {},
+								"mailboxIds": {"mb-inbox": true}
+							}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	emails, err := client.Mail().GetThread(ctx, "thread-abc")
+	require.NoError(t, err)
+	require.Len(t, emails, 3)
+
+	// Should be sorted chronologically (oldest first)
+	assert.Equal(t, "email-1", emails[0].ID)
+	assert.Equal(t, "Thread Subject", emails[0].Subject)
+
+	assert.Equal(t, "email-2", emails[1].ID)
+	assert.Equal(t, "Re: Thread Subject", emails[1].Subject)
+
+	assert.Equal(t, "email-3", emails[2].ID)
+	assert.Equal(t, "Re: Re: Thread Subject", emails[2].Subject)
+}
+
+func TestMailService_GetThread_NotFound(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["Thread/get", {
+					"accountId": "acc1",
+					"state": "t1",
+					"list": [],
+					"notFound": ["thread-missing"]
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	emails, err := client.Mail().GetThread(ctx, "thread-missing")
+	assert.Error(t, err)
+	assert.Nil(t, emails)
+	assert.Contains(t, err.Error(), "not found")
+}

@@ -60,6 +60,20 @@ func (c *Client) MaskedEmail() *MaskedEmailService {
 	}
 }
 
+// Vacation returns the vacation response service for out-of-office operations.
+func (c *Client) Vacation() *VacationService {
+	return &VacationService{
+		client: c,
+	}
+}
+
+// Quota returns the quota service for storage quota operations.
+func (c *Client) Quota() *QuotaService {
+	return &QuotaService{
+		client: c,
+	}
+}
+
 // accountID returns the current account ID, fetching session if needed.
 func (c *Client) getAccountID(ctx context.Context) (string, error) {
 	if c.accountID != "" {
