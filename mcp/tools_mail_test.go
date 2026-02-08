@@ -587,6 +587,56 @@ func TestEventConversion(t *testing.T) {
 	}
 }
 
+func TestRegisterResources(t *testing.T) {
+	server := NewServer("test", "1.0")
+	registry := NewResourceRegistry(nil) // nil client is fine for registration test
+
+	RegisterResources(server, registry)
+
+	// Verify all resources from registry are registered with the server
+	registryResources := registry.List()
+	if len(registryResources) == 0 {
+		t.Fatal("expected registry to have default resources")
+	}
+
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+
+	for _, res := range registryResources {
+		if _, ok := server.resources[res.URI]; !ok {
+			t.Errorf("expected resource %q to be registered with server", res.URI)
+		}
+		if _, ok := server.readers[res.URI]; !ok {
+			t.Errorf("expected reader for %q to be registered with server", res.URI)
+		}
+	}
+
+	// Verify resource count matches
+	if len(server.resources) != len(registryResources) {
+		t.Errorf("expected %d resources, got %d", len(registryResources), len(server.resources))
+	}
+}
+
+func TestRegisterResourcesWithCalendar(t *testing.T) {
+	server := NewServer("test", "1.0")
+	cal := &CalendarAdapter{
+		ListCalendarsFunc: func(_ context.Context) ([]fastmail.Calendar, error) {
+			return nil, nil
+		},
+	}
+	registry := NewResourceRegistry(nil, WithCalendarAdapter(cal))
+
+	RegisterResources(server, registry)
+
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+
+	// Should have all default resources including calendar ones
+	if _, ok := server.resources["fastmail://calendars"]; !ok {
+		t.Error("expected fastmail://calendars resource to be registered")
+	}
+}
+
 func TestParseAddresses(t *testing.T) {
 	addrs := []string{"alice@example.com", "bob@example.com"}
 	result := parseAddresses(addrs)

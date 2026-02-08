@@ -29,6 +29,14 @@ type CalendarAdapter struct {
 	ListCalendarsFunc func(ctx context.Context) ([]fastmail.Calendar, error)
 }
 
+// RegisterResources registers all resources from the registry with the server.
+func RegisterResources(s *Server, registry *ResourceRegistry) {
+	for _, res := range registry.List() {
+		r := res // capture loop variable
+		s.RegisterResource(&r, registry.Read)
+	}
+}
+
 // RegisterMailTools registers all mail-related tools on the server.
 func RegisterMailTools(s *Server, cfg ToolsConfig) {
 	registerMailTools(s, cfg)

@@ -45,7 +45,10 @@ func runMCPServer(_ *cobra.Command) error {
 	}
 
 	// Create optional DAV clients (nil if not configured)
-	contactsClient, _ := createContactsClient()
+	contactsClient, contactsErr := createContactsClient()
+	if contactsErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: contacts unavailable: %v\n", contactsErr)
+	}
 	calendarAdapter := createCalendarAdapter()
 
 	server := mcp.NewServer("fastmail-cli", Version)
@@ -56,6 +59,9 @@ func runMCPServer(_ *cobra.Command) error {
 		Calendar: calendarAdapter,
 	})
 
+	registry := mcp.NewResourceRegistry(client, mcp.WithCalendarAdapter(calendarAdapter))
+	mcp.RegisterResources(server, registry)
+
 	return server.Run(ctx, os.Stdin, os.Stdout)
 }
 
@@ -64,6 +70,7 @@ func runMCPServer(_ *cobra.Command) error {
 func createCalendarAdapter() *mcp.CalendarAdapter {
 	calService, err := createCalendarClient()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: calendar unavailable: %v\n", err)
 		return nil
 	}
 
