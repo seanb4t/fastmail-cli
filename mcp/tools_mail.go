@@ -71,14 +71,30 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 
 	// mail_send - Send email
 	s.RegisterTool(
-		NewTool("mail_send", "Compose and send a new email").
+		NewTool("mail_send", "Compose and send a new email. Use schedule for delayed delivery.").
 			WithProperty("to", "array", "Recipient email addresses").
 			WithProperty("cc", "array", "CC recipient addresses (optional)").
 			WithProperty("bcc", "array", "BCC recipient addresses (optional)").
 			WithProperty("subject", "string", "Email subject").
 			WithProperty("body", "string", "Email body text").
+			WithProperty("schedule", "string", "Schedule delivery time in RFC3339 format (e.g., '2024-06-15T14:00:00Z'). Omit for immediate send.").
 			WithRequired("to", "subject", "body"),
 		makeMailSendHandler(cfg),
+	)
+
+	// mail_scheduled - List pending scheduled sends
+	s.RegisterTool(
+		NewTool("mail_scheduled", "List pending scheduled email deliveries").
+			WithProperty("limit", "integer", "Maximum number of results (default: 10)"),
+		makeMailScheduledHandler(cfg),
+	)
+
+	// mail_scheduled_cancel - Cancel a scheduled send
+	s.RegisterTool(
+		NewTool("mail_scheduled_cancel", "Cancel a pending scheduled email delivery").
+			WithProperty("submission_id", "string", "The submission ID to cancel").
+			WithRequired("submission_id"),
+		makeMailScheduledCancelHandler(cfg),
 	)
 
 	// mail_reply - Reply to email
@@ -246,14 +262,76 @@ func makeMailSendHandler(cfg ToolsConfig) ToolHandler {
 			Body:    body,
 		}
 
+		if scheduleStr := getStringArg(args, "schedule", ""); scheduleStr != "" {
+			t, err := time.Parse(time.RFC3339, scheduleStr)
+			if err != nil {
+				return nil, oops.Wrapf(err, "parsing schedule time (must be RFC3339)")
+			}
+			opts.Schedule = &t
+		}
+
 		emailID, err := cfg.Client.Mail().Send(ctx, opts)
 		if err != nil {
 			return nil, oops.Wrapf(err, "sending email")
 		}
 
-		return map[string]any{
+		status := "sent"
+		if opts.Schedule != nil {
+			status = "scheduled"
+		}
+		result := map[string]any{
 			"id":     emailID,
-			"status": "sent",
+			"status": status,
+		}
+		if opts.Schedule != nil {
+			result["send_at"] = opts.Schedule.UTC().Format(time.RFC3339)
+		}
+		return result, nil
+	}
+}
+
+func makeMailScheduledHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		limit := getUint64Arg(args, "limit", 10)
+
+		scheduled, err := cfg.Client.Mail().ListScheduled(ctx, limit)
+		if err != nil {
+			return nil, oops.Wrapf(err, "listing scheduled sends")
+		}
+
+		result := make([]map[string]any, len(scheduled))
+		for i, s := range scheduled {
+			toAddrs := make([]string, len(s.To))
+			for j, addr := range s.To {
+				toAddrs[j] = addr.String()
+			}
+			result[i] = map[string]any{
+				"submission_id": s.SubmissionID,
+				"email_id":      s.EmailID,
+				"subject":       s.Subject,
+				"to":            toAddrs,
+				"send_at":       s.SendAt.Format(time.RFC3339),
+				"status":        s.UndoStatus,
+			}
+		}
+		return result, nil
+	}
+}
+
+func makeMailScheduledCancelHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		submissionID := getStringArg(args, "submission_id", "")
+		if submissionID == "" {
+			return nil, oops.Errorf("submission_id is required")
+		}
+
+		if err := cfg.Client.Mail().CancelScheduled(ctx, submissionID); err != nil {
+			return nil, oops.Wrapf(err, "canceling scheduled send")
+		}
+
+		return map[string]any{
+			"submission_id": submissionID,
+			"status":        "canceled",
 		}, nil
 	}
 }

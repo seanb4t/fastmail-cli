@@ -856,6 +856,8 @@ type SendOptions struct {
 	Bcc     []EmailAddress
 	Subject string
 	Body    string
+	// Schedule is the time to send the email. If nil, the email is sent immediately.
+	Schedule *time.Time
 }
 
 // Send creates and sends a new email.
@@ -881,7 +883,11 @@ func (s *MailService) Send(ctx context.Context, opts SendOptions) (string, error
 	emailData := buildEmailForSend(identity, opts, draftsID)
 
 	// Create email and submit in one request
-	return s.createAndSubmit(ctx, accountID, identity.ID, "draft", emailData)
+	var sendAt string
+	if opts.Schedule != nil {
+		sendAt = opts.Schedule.UTC().Format(time.RFC3339)
+	}
+	return s.createAndSubmit(ctx, accountID, identity.ID, "draft", emailData, sendAt)
 }
 
 // ReplyOptions specifies options for replying to an email.
@@ -919,8 +925,8 @@ func (s *MailService) Reply(ctx context.Context, opts ReplyOptions) (string, err
 	// Build the reply email
 	emailData := buildEmailForReply(identity, original, opts, draftsID)
 
-	// Create and submit
-	return s.createAndSubmit(ctx, accountID, identity.ID, "reply", emailData)
+	// Create and submit (replies are always sent immediately)
+	return s.createAndSubmit(ctx, accountID, identity.ID, "reply", emailData, "")
 }
 
 // getDefaultIdentity retrieves the first available identity for the account.
@@ -997,25 +1003,34 @@ func (s *MailService) getEmailForReply(ctx context.Context, accountID, emailID s
 }
 
 // createAndSubmit creates an email and submits it for delivery.
-func (s *MailService) createAndSubmit(ctx context.Context, accountID, identityID, clientID string, emailData map[string]any) (string, error) {
+// If sendAt is non-empty (RFC3339), the submission is scheduled for future delivery.
+func (s *MailService) createAndSubmit(ctx context.Context, accountID, identityID, clientID string, emailData map[string]any, sendAt string) (string, error) {
 	// Build Email/set to create the email
 	emailSetBuilder := jmap.NewEmailSet(accountID).Create(clientID, emailData)
 
 	// Get the drafts mailbox ID for the update patch
 	draftsID := getDraftsKey(emailData)
 
-	// Build EmailSubmission/set to submit the email
-	// After successful send, remove draft keyword
+	// Build the submission create payload
+	submissionData := map[string]any{
+		"identityId": identityID,
+		"emailId":    "#" + clientID,
+	}
+	if sendAt != "" {
+		submissionData["sendAt"] = sendAt
+	}
+
 	submissionSetBuilder := jmap.NewEmailSubmissionSet(accountID).
-		Create("sub1", map[string]any{
-			"identityId": identityID,
-			"emailId":    "#" + clientID,
-		}).
-		// Remove draft keyword after successful send
-		OnSuccessUpdateEmail("#"+clientID, map[string]any{
+		Create("sub1", submissionData)
+
+	// For immediate sends, remove draft keyword after successful send.
+	// For scheduled sends, keep the email as a draft until the server delivers it.
+	if sendAt == "" {
+		submissionSetBuilder.OnSuccessUpdateEmail("#"+clientID, map[string]any{
 			"mailboxIds/" + draftsID: nil,
 			"keywords/$draft":        nil,
 		})
+	}
 
 	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail, jmap.CapSubmission)
 	emailCallID := req.Invoke("Email/set", emailSetBuilder.Build())
@@ -1256,4 +1271,166 @@ func buildQuotedReply(original *jmap.Email, replyBody string) string {
 	}
 
 	return replyBody + "\n\n" + attribution + strings.Join(quoted, "\n")
+}
+
+// ListScheduled returns pending scheduled email submissions.
+func (s *MailService) ListScheduled(ctx context.Context, limit uint64) ([]ScheduledSend, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Query for pending submissions sorted by sendAt ascending
+	queryBuilder := jmap.NewEmailSubmissionQuery(accountID).
+		UndoStatus("pending").
+		SortBy("sendAt", false) // ascending — soonest first
+	if limit > 0 {
+		queryBuilder.Limit(limit)
+	}
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail, jmap.CapSubmission)
+	queryCallID := req.Invoke("EmailSubmission/query", queryBuilder.Build())
+
+	// Chain EmailSubmission/get to hydrate submissions
+	getBuilder := jmap.NewEmailSubmissionGet(accountID).
+		Properties("id", "emailId", "sendAt", "undoStatus")
+	getArgs := getBuilder.Build()
+	getArgs["#ids"] = jmap.ResultReference(queryCallID, "EmailSubmission/query", "/ids")
+	req.Invoke("EmailSubmission/get", getArgs)
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	// Check query result
+	queryResult, err := resp.GetResult(queryCallID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting query result")
+	}
+	if queryResult.IsError() {
+		return nil, oops.Errorf("submission query failed: %s", queryResult.Error())
+	}
+
+	// Get submission list
+	getResult, err := resp.GetResult("1")
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting submission list result")
+	}
+	if getResult.IsError() {
+		return nil, oops.Errorf("submission get failed: %s", getResult.Error())
+	}
+
+	var getResp jmap.EmailSubmissionGetResponse
+	if err := getResult.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding submission response")
+	}
+
+	if len(getResp.List) == 0 {
+		return []ScheduledSend{}, nil
+	}
+
+	// Collect email IDs to fetch subject/recipients
+	emailIDs := make([]string, len(getResp.List))
+	for i, sub := range getResp.List {
+		emailIDs[i] = sub.EmailID
+	}
+
+	// Fetch email details for display
+	emailReq := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	emailGetBuilder := jmap.NewEmailGet(accountID).
+		IDs(emailIDs...).
+		Properties("id", "subject", "to")
+	emailCallID := emailReq.Invoke("Email/get", emailGetBuilder.Build())
+
+	emailResp, err := s.client.jmap.Call(ctx, emailReq)
+	if err != nil {
+		return nil, oops.Wrapf(err, "fetching email details")
+	}
+
+	emailResult, err := emailResp.GetResult(emailCallID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting email result")
+	}
+	if emailResult.IsError() {
+		return nil, oops.Errorf("email get failed: %s", emailResult.Error())
+	}
+
+	var emailGetResp jmap.EmailGetResponse
+	if err := emailResult.Decode(&emailGetResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding email response")
+	}
+
+	// Build email lookup map
+	emailMap := make(map[string]jmap.Email, len(emailGetResp.List))
+	for _, e := range emailGetResp.List {
+		emailMap[e.ID] = e
+	}
+
+	// Combine submission + email data into domain type
+	results := make([]ScheduledSend, len(getResp.List))
+	for i, sub := range getResp.List {
+		sendAt, _ := time.Parse(time.RFC3339, sub.SendAt)
+		result := ScheduledSend{
+			SubmissionID: sub.ID,
+			EmailID:      sub.EmailID,
+			SendAt:       sendAt,
+			UndoStatus:   sub.UndoStatus,
+		}
+		if email, ok := emailMap[sub.EmailID]; ok {
+			result.Subject = email.Subject
+			result.To = convertJMAPToEmailAddresses(email.To)
+		}
+		results[i] = result
+	}
+
+	return results, nil
+}
+
+// CancelScheduled cancels a pending scheduled email submission.
+// Per JMAP spec, destroying a pending submission cancels delivery.
+func (s *MailService) CancelScheduled(ctx context.Context, submissionID string) error {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return err
+	}
+
+	destroyBuilder := jmap.NewEmailSubmissionDestroy(accountID).
+		Destroy(submissionID)
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail, jmap.CapSubmission)
+	callID := req.Invoke("EmailSubmission/set", destroyBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return oops.Errorf("submission destroy failed: %s", result.Error())
+	}
+
+	var setResp jmap.EmailSubmissionSetResponse
+	if err := result.Decode(&setResp); err != nil {
+		return oops.Wrapf(err, "decoding response")
+	}
+
+	if errInfo, ok := setResp.NotCreated[submissionID]; ok {
+		return oops.Errorf("failed to cancel submission: %s", errInfo.Error())
+	}
+
+	return nil
+}
+
+// convertJMAPToEmailAddresses converts JMAP addresses to domain addresses.
+func convertJMAPToEmailAddresses(addrs []jmap.EmailAddress) []EmailAddress {
+	result := make([]EmailAddress, len(addrs))
+	for i, a := range addrs {
+		result[i] = EmailAddress{Name: a.Name, Email: a.Email}
+	}
+	return result
 }

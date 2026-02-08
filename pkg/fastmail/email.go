@@ -141,6 +141,27 @@ func (e *Email) IsDraft() bool {
 	return e.HasKeyword(KeywordDraft)
 }
 
+// ScheduledSend represents a pending scheduled email submission.
+type ScheduledSend struct {
+	// SubmissionID is the EmailSubmission server ID.
+	SubmissionID string
+
+	// EmailID is the ID of the email to be sent.
+	EmailID string
+
+	// SendAt is the scheduled delivery time.
+	SendAt time.Time
+
+	// UndoStatus is the current status ("pending", "final", "canceled").
+	UndoStatus string
+
+	// Subject is the email subject (hydrated from Email/get).
+	Subject string
+
+	// To contains the recipient addresses (hydrated from Email/get).
+	To []EmailAddress
+}
+
 // ImportResult represents the result of importing an RFC 5322 email message.
 type ImportResult struct {
 	// ID is the server-assigned email ID.

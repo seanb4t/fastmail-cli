@@ -162,11 +162,13 @@ func (b *EmailSubmissionSetBuilder) Build() map[string]any {
 
 // EmailSubmissionSetResponse represents the response from EmailSubmission/set.
 type EmailSubmissionSetResponse struct {
-	AccountID  string                     `json:"accountId"`
-	OldState   string                     `json:"oldState"`
-	NewState   string                     `json:"newState"`
-	Created    map[string]EmailSubmission `json:"created"`
-	NotCreated map[string]MethodError     `json:"notCreated"`
+	AccountID    string                     `json:"accountId"`
+	OldState     string                     `json:"oldState"`
+	NewState     string                     `json:"newState"`
+	Created      map[string]EmailSubmission `json:"created"`
+	NotCreated   map[string]MethodError     `json:"notCreated"`
+	Destroyed    []string                   `json:"destroyed"`
+	NotDestroyed map[string]MethodError     `json:"notDestroyed"`
 }
 
 // Identity represents a JMAP Identity object (sender identity).
@@ -180,6 +182,166 @@ type Identity struct {
 	TextSignature string         `json:"textSignature,omitempty"`
 	HTMLSignature string         `json:"htmlSignature,omitempty"`
 	MayDelete     bool           `json:"mayDelete"`
+}
+
+// EmailSubmissionQueryBuilder builds arguments for EmailSubmission/query.
+type EmailSubmissionQueryBuilder struct {
+	accountID string
+	filter    map[string]any
+	sort      []Comparator
+	limit     uint64
+}
+
+// NewEmailSubmissionQuery creates a new EmailSubmission/query builder.
+func NewEmailSubmissionQuery(accountID string) *EmailSubmissionQueryBuilder {
+	return &EmailSubmissionQueryBuilder{
+		accountID: accountID,
+		filter:    make(map[string]any),
+	}
+}
+
+// UndoStatus filters by undo status (e.g., "pending", "final", "canceled").
+func (b *EmailSubmissionQueryBuilder) UndoStatus(status string) *EmailSubmissionQueryBuilder {
+	b.filter["undoStatus"] = status
+	return b
+}
+
+// CreatedBefore filters submissions created before the given UTC date string.
+func (b *EmailSubmissionQueryBuilder) CreatedBefore(utcDate string) *EmailSubmissionQueryBuilder {
+	b.filter["createdBefore"] = utcDate
+	return b
+}
+
+// CreatedAfter filters submissions created after the given UTC date string.
+func (b *EmailSubmissionQueryBuilder) CreatedAfter(utcDate string) *EmailSubmissionQueryBuilder {
+	b.filter["createdAfter"] = utcDate
+	return b
+}
+
+// SortBy adds a sort comparator. Set descending=true for newest first.
+func (b *EmailSubmissionQueryBuilder) SortBy(property string, descending bool) *EmailSubmissionQueryBuilder {
+	b.sort = append(b.sort, Comparator{
+		Property:    property,
+		IsAscending: !descending,
+	})
+	return b
+}
+
+// Limit sets the maximum number of results.
+func (b *EmailSubmissionQueryBuilder) Limit(n uint64) *EmailSubmissionQueryBuilder {
+	b.limit = n
+	return b
+}
+
+// Build returns the arguments map for Request.Invoke.
+func (b *EmailSubmissionQueryBuilder) Build() map[string]any {
+	args := map[string]any{
+		"accountId": b.accountID,
+	}
+
+	if len(b.filter) > 0 {
+		args["filter"] = b.filter
+	}
+	if len(b.sort) > 0 {
+		args["sort"] = b.sort
+	}
+	if b.limit > 0 {
+		args["limit"] = b.limit
+	}
+
+	return args
+}
+
+// EmailSubmissionQueryResponse represents the response from EmailSubmission/query.
+type EmailSubmissionQueryResponse struct {
+	AccountID           string   `json:"accountId"`
+	QueryState          string   `json:"queryState"`
+	CanCalculateChanges bool     `json:"canCalculateChanges"`
+	Position            uint64   `json:"position"`
+	IDs                 []string `json:"ids"`
+	Total               uint64   `json:"total"`
+}
+
+// EmailSubmissionGetBuilder builds arguments for EmailSubmission/get.
+type EmailSubmissionGetBuilder struct {
+	accountID  string
+	ids        []string
+	properties []string
+}
+
+// NewEmailSubmissionGet creates a new EmailSubmission/get builder.
+func NewEmailSubmissionGet(accountID string) *EmailSubmissionGetBuilder {
+	return &EmailSubmissionGetBuilder{
+		accountID: accountID,
+	}
+}
+
+// IDs sets the submission IDs to fetch.
+func (b *EmailSubmissionGetBuilder) IDs(ids ...string) *EmailSubmissionGetBuilder {
+	b.ids = ids
+	return b
+}
+
+// Properties sets which properties to fetch.
+func (b *EmailSubmissionGetBuilder) Properties(props ...string) *EmailSubmissionGetBuilder {
+	b.properties = props
+	return b
+}
+
+// Build returns the arguments map for Request.Invoke.
+func (b *EmailSubmissionGetBuilder) Build() map[string]any {
+	args := map[string]any{
+		"accountId": b.accountID,
+	}
+
+	if len(b.ids) > 0 {
+		args["ids"] = b.ids
+	}
+	if len(b.properties) > 0 {
+		args["properties"] = b.properties
+	}
+
+	return args
+}
+
+// EmailSubmissionGetResponse represents the response from EmailSubmission/get.
+type EmailSubmissionGetResponse struct {
+	AccountID string            `json:"accountId"`
+	State     string            `json:"state"`
+	List      []EmailSubmission `json:"list"`
+	NotFound  []string          `json:"notFound"`
+}
+
+// EmailSubmissionDestroyBuilder builds arguments for EmailSubmission/set with destroy.
+type EmailSubmissionDestroyBuilder struct {
+	accountID string
+	destroy   []string
+}
+
+// NewEmailSubmissionDestroy creates a new EmailSubmission/set builder for destroying submissions.
+func NewEmailSubmissionDestroy(accountID string) *EmailSubmissionDestroyBuilder {
+	return &EmailSubmissionDestroyBuilder{
+		accountID: accountID,
+	}
+}
+
+// Destroy adds submission IDs to destroy (cancel).
+func (b *EmailSubmissionDestroyBuilder) Destroy(ids ...string) *EmailSubmissionDestroyBuilder {
+	b.destroy = append(b.destroy, ids...)
+	return b
+}
+
+// Build returns the arguments map for Request.Invoke.
+func (b *EmailSubmissionDestroyBuilder) Build() map[string]any {
+	args := map[string]any{
+		"accountId": b.accountID,
+	}
+
+	if len(b.destroy) > 0 {
+		args["destroy"] = b.destroy
+	}
+
+	return args
 }
 
 // IdentityGetBuilder builds arguments for Identity/get.

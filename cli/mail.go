@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +39,7 @@ func newMailCommand() *cobra.Command {
 	cmd.AddCommand(newMailDownloadCommand())
 	cmd.AddCommand(newMailUploadCommand())
 	cmd.AddCommand(newMailImportCommand())
+	cmd.AddCommand(newMailScheduledCommand())
 
 	return cmd
 }
@@ -84,11 +86,12 @@ func newMailSendCommand() *cobra.Command {
 	var bcc []string
 	var subject string
 	var body string
+	var schedule string
 
 	cmd := &cobra.Command{
 		Use:   "send",
 		Short: "Send an email",
-		Long:  "Compose and send a new email.",
+		Long:  "Compose and send a new email. Use --schedule to delay delivery.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if len(to) == 0 {
 				return fmt.Errorf("at least one --to recipient is required")
@@ -118,11 +121,22 @@ func newMailSendCommand() *cobra.Command {
 				Body:    body,
 			}
 
+			if schedule != "" {
+				t, perr := time.Parse(time.RFC3339, schedule)
+				if perr != nil {
+					return fmt.Errorf("invalid --schedule time (must be RFC3339, e.g. 2024-06-15T14:00:00Z): %w", perr)
+				}
+				opts.Schedule = &t
+			}
+
 			emailID, err := client.Mail().Send(ctx, opts)
 			if err != nil {
 				return fmt.Errorf("sending email: %w", err)
 			}
 
+			if schedule != "" {
+				return outputScheduledResult(cmd, emailID, schedule)
+			}
 			return outputSendResult(cmd, emailID)
 		},
 	}
@@ -132,6 +146,7 @@ func newMailSendCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&bcc, "bcc", nil, "BCC recipient (can be repeated)")
 	cmd.Flags().StringVar(&subject, "subject", "", "email subject")
 	cmd.Flags().StringVar(&body, "body", "", "email body text")
+	cmd.Flags().StringVar(&schedule, "schedule", "", "schedule delivery time (RFC3339, e.g. 2024-06-15T14:00:00Z)")
 
 	_ = cmd.MarkFlagRequired("to")
 	_ = cmd.MarkFlagRequired("subject")
@@ -1032,6 +1047,170 @@ func outputImportResult(cmd *cobra.Command, result *fastmail.ImportResult) error
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Imported: id=%s blob_id=%s size=%s\n", result.ID, result.BlobID, formatSize(result.Size))
+	return nil
+}
+
+// outputScheduledResult writes the scheduled send result to output.
+func outputScheduledResult(cmd *cobra.Command, emailID, schedule string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "status": "scheduled", "send_at": schedule}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email scheduled: %s (delivery at %s)\n", emailID, schedule)
+	return nil
+}
+
+// newMailScheduledCommand creates the mail scheduled command group.
+func newMailScheduledCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "scheduled",
+		Short: "Manage scheduled email sends",
+		Long:  "List and cancel pending scheduled email deliveries.",
+	}
+
+	cmd.AddCommand(newMailScheduledListCommand())
+	cmd.AddCommand(newMailScheduledCancelCommand())
+
+	return cmd
+}
+
+// newMailScheduledListCommand creates the mail scheduled list command.
+func newMailScheduledListCommand() *cobra.Command {
+	var limit uint64
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List pending scheduled sends",
+		Long:  "List emails that are scheduled for future delivery.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			scheduled, err := client.Mail().ListScheduled(ctx, limit)
+			if err != nil {
+				return fmt.Errorf("listing scheduled sends: %w", err)
+			}
+
+			return outputScheduledList(cmd, scheduled)
+		},
+	}
+
+	cmd.Flags().Uint64VarP(&limit, "limit", "n", 10, "maximum results to return")
+
+	return cmd
+}
+
+// newMailScheduledCancelCommand creates the mail scheduled cancel command.
+func newMailScheduledCancelCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cancel SUBMISSION_ID",
+		Short: "Cancel a scheduled send",
+		Long:  "Cancel a pending scheduled email delivery by its submission ID.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			submissionID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().CancelScheduled(ctx, submissionID); err != nil {
+				return fmt.Errorf("canceling scheduled send: %w", err)
+			}
+
+			return outputCancelResult(cmd, submissionID)
+		},
+	}
+
+	return cmd
+}
+
+// outputScheduledList writes the scheduled sends list to output.
+func outputScheduledList(cmd *cobra.Command, scheduled []fastmail.ScheduledSend) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		type jsonScheduled struct {
+			SubmissionID string   `json:"submission_id"`
+			EmailID      string   `json:"email_id"`
+			Subject      string   `json:"subject"`
+			To           []string `json:"to"`
+			SendAt       string   `json:"send_at"`
+			Status       string   `json:"status"`
+		}
+		out := make([]jsonScheduled, len(scheduled))
+		for i, s := range scheduled {
+			toAddrs := make([]string, len(s.To))
+			for j, addr := range s.To {
+				toAddrs[j] = addr.String()
+			}
+			out[i] = jsonScheduled{
+				SubmissionID: s.SubmissionID,
+				EmailID:      s.EmailID,
+				Subject:      s.Subject,
+				To:           toAddrs,
+				SendAt:       s.SendAt.Format(time.RFC3339),
+				Status:       s.UndoStatus,
+			}
+		}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+
+	w := cmd.OutOrStdout()
+	if len(scheduled) == 0 {
+		_, _ = fmt.Fprintln(w, "No scheduled sends")
+		return nil
+	}
+
+	for _, s := range scheduled {
+		toAddrs := make([]string, len(s.To))
+		for i, addr := range s.To {
+			toAddrs[i] = addr.String()
+		}
+		_, _ = fmt.Fprintf(w, "%s  %s  to:%s  at:%s  [%s]\n",
+			s.SubmissionID, s.Subject, strings.Join(toAddrs, ","), s.SendAt.Format(time.RFC3339), s.UndoStatus)
+	}
+	return nil
+}
+
+// outputCancelResult writes the cancel result to output.
+func outputCancelResult(cmd *cobra.Command, submissionID string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"submission_id": submissionID, "status": "canceled"}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Scheduled send %s canceled\n", submissionID)
 	return nil
 }
 

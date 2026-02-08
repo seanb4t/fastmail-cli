@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1840,4 +1841,261 @@ func TestMailService_SearchWithSnippets_SnippetError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, results)
 	assert.Contains(t, err.Error(), "snippet")
+}
+
+func TestMailService_SendScheduled(t *testing.T) {
+	requestCount := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+		requestCount++
+
+		switch methodName {
+		case "Identity/get":
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Identity/get", {
+						"accountId": "acc1",
+						"state": "i1",
+						"list": [{"id": "identity1", "name": "Test User", "email": "test@example.com"}],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case testMethodMailboxGet:
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Mailbox/get", {
+						"accountId": "acc1",
+						"state": "m1",
+						"list": [
+							{"id": "mb-drafts", "name": "Drafts", "role": "drafts"},
+							{"id": "mb-sent", "name": "Sent", "role": "sent"}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		case testMethodEmailSet:
+			// Verify the submission payload has sendAt
+			secondCall := methodCalls[1].([]any)
+			subArgs := secondCall[1].(map[string]any)
+			create := subArgs["create"].(map[string]any)
+			sub1 := create["sub1"].(map[string]any)
+			assert.Equal(t, "2024-06-15T14:00:00Z", sub1["sendAt"])
+
+			// Verify no onSuccessUpdateEmail for scheduled sends
+			_, hasOnSuccess := subArgs["onSuccessUpdateEmail"]
+			assert.False(t, hasOnSuccess, "scheduled sends should not have onSuccessUpdateEmail")
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/set", {
+						"accountId": "acc1",
+						"oldState": "e1",
+						"newState": "e2",
+						"created": {
+							"draft": {
+								"id": "email-scheduled-1",
+								"blobId": "blob123",
+								"threadId": "thread123"
+							}
+						}
+					}, "0"],
+					["EmailSubmission/set", {
+						"accountId": "acc1",
+						"oldState": "sub1",
+						"newState": "sub2",
+						"created": {
+							"sub1": {
+								"id": "submission-sched-1",
+								"undoStatus": "pending"
+							}
+						}
+					}, "1"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	scheduleTime, _ := time.Parse(time.RFC3339, "2024-06-15T14:00:00Z")
+	opts := SendOptions{
+		To:       []EmailAddress{{Email: "recipient@example.com"}},
+		Subject:  "Scheduled Email",
+		Body:     "This will be sent later",
+		Schedule: &scheduleTime,
+	}
+
+	emailID, err := client.Mail().Send(ctx, opts)
+	require.NoError(t, err)
+	assert.Equal(t, "email-scheduled-1", emailID)
+}
+
+func TestMailService_ListScheduled(t *testing.T) {
+	requestCount := 0
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+		requestCount++
+
+		switch methodName {
+		case "EmailSubmission/query":
+			// Verify filter has undoStatus=pending
+			args := firstCall[1].(map[string]any)
+			filter := args["filter"].(map[string]any)
+			assert.Equal(t, "pending", filter["undoStatus"])
+
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["EmailSubmission/query", {
+						"accountId": "acc1",
+						"queryState": "sq1",
+						"canCalculateChanges": false,
+						"position": 0,
+						"ids": ["sub-1", "sub-2"],
+						"total": 2
+					}, "0"],
+					["EmailSubmission/get", {
+						"accountId": "acc1",
+						"state": "ss1",
+						"list": [
+							{
+								"id": "sub-1",
+								"emailId": "email-a",
+								"sendAt": "2024-06-15T14:00:00Z",
+								"undoStatus": "pending"
+							},
+							{
+								"id": "sub-2",
+								"emailId": "email-b",
+								"sendAt": "2024-06-16T09:00:00Z",
+								"undoStatus": "pending"
+							}
+						],
+						"notFound": []
+					}, "1"]
+				]
+			}`))
+		case testMethodEmailGet:
+			_, _ = w.Write([]byte(`{
+				"sessionState": "s1",
+				"methodResponses": [
+					["Email/get", {
+						"accountId": "acc1",
+						"state": "e1",
+						"list": [
+							{
+								"id": "email-a",
+								"subject": "Scheduled Meeting",
+								"to": [{"email": "alice@example.com", "name": "Alice"}]
+							},
+							{
+								"id": "email-b",
+								"subject": "Weekly Report",
+								"to": [{"email": "bob@example.com"}]
+							}
+						],
+						"notFound": []
+					}, "0"]
+				]
+			}`))
+		}
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	scheduled, err := client.Mail().ListScheduled(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, scheduled, 2)
+
+	assert.Equal(t, "sub-1", scheduled[0].SubmissionID)
+	assert.Equal(t, "email-a", scheduled[0].EmailID)
+	assert.Equal(t, "Scheduled Meeting", scheduled[0].Subject)
+	assert.Equal(t, "pending", scheduled[0].UndoStatus)
+	expectedTime, _ := time.Parse(time.RFC3339, "2024-06-15T14:00:00Z")
+	assert.Equal(t, expectedTime, scheduled[0].SendAt)
+	require.Len(t, scheduled[0].To, 1)
+	assert.Equal(t, "alice@example.com", scheduled[0].To[0].Email)
+
+	assert.Equal(t, "sub-2", scheduled[1].SubmissionID)
+	assert.Equal(t, "Weekly Report", scheduled[1].Subject)
+}
+
+func TestMailService_CancelScheduled(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		args := firstCall[1].(map[string]any)
+
+		// Verify destroy contains our submission ID
+		destroy := args["destroy"].([]any)
+		assert.Len(t, destroy, 1)
+		assert.Equal(t, "sub-cancel-1", destroy[0])
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["EmailSubmission/set", {
+					"accountId": "acc1",
+					"oldState": "sub1",
+					"newState": "sub2",
+					"destroyed": ["sub-cancel-1"]
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	err := client.Mail().CancelScheduled(ctx, "sub-cancel-1")
+	require.NoError(t, err)
 }
