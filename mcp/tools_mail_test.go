@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"time"
@@ -25,9 +26,14 @@ func TestRegisterMailTools(t *testing.T) {
 		"mail_delete",
 		"masked_email_list",
 		"masked_email_create",
+		"masked_email_enable",
+		"masked_email_disable",
+		"masked_email_delete",
 		"contacts_list",
 		"contacts_get",
 		"contacts_create",
+		"contacts_update",
+		"contacts_delete",
 		"calendar_events",
 		"calendar_create",
 	}
@@ -333,5 +339,142 @@ func TestParseAddresses(t *testing.T) {
 	}
 	if result[1].Email != "bob@example.com" {
 		t.Errorf("expected 'bob@example.com', got %q", result[1].Email)
+	}
+}
+
+func TestMaskedEmailEnable_RequiresID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["masked_email_enable"]
+	if !ok {
+		t.Fatal("masked_email_enable tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+	if err.Error() != "id is required" {
+		t.Errorf("expected 'id is required', got %q", err.Error())
+	}
+}
+
+func TestMaskedEmailDisable_RequiresID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["masked_email_disable"]
+	if !ok {
+		t.Fatal("masked_email_disable tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+	if err.Error() != "id is required" {
+		t.Errorf("expected 'id is required', got %q", err.Error())
+	}
+}
+
+func TestMaskedEmailDelete_RequiresID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["masked_email_delete"]
+	if !ok {
+		t.Fatal("masked_email_delete tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+	if err.Error() != "id is required" {
+		t.Errorf("expected 'id is required', got %q", err.Error())
+	}
+}
+
+func TestContactsUpdate_RequiresID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{
+		Contacts: &fastmail.ContactsClient{},
+	})
+
+	rt, ok := server.tools["contacts_update"]
+	if !ok {
+		t.Fatal("contacts_update tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+	if err.Error() != "id is required" {
+		t.Errorf("expected 'id is required', got %q", err.Error())
+	}
+}
+
+func TestContactsDelete_RequiresID(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{
+		Contacts: &fastmail.ContactsClient{},
+	})
+
+	rt, ok := server.tools["contacts_delete"]
+	if !ok {
+		t.Fatal("contacts_delete tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{})
+	if err == nil {
+		t.Fatal("expected error for missing id")
+	}
+	if err.Error() != "id is required" {
+		t.Errorf("expected 'id is required', got %q", err.Error())
+	}
+}
+
+func TestContactsUpdate_NilClient(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["contacts_update"]
+	if !ok {
+		t.Fatal("contacts_update tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{"id": "test-123"})
+	if err == nil {
+		t.Fatal("expected error for nil contacts client")
+	}
+	if err.Error() != "contacts client not configured" {
+		t.Errorf("expected 'contacts client not configured', got %q", err.Error())
+	}
+}
+
+func TestContactsDelete_NilClient(t *testing.T) {
+	server := NewServer("test", "1.0")
+	RegisterMailTools(server, ToolsConfig{})
+
+	rt, ok := server.tools["contacts_delete"]
+	if !ok {
+		t.Fatal("contacts_delete tool not found")
+	}
+
+	ctx := context.Background()
+	_, err := rt.handler(ctx, map[string]any{"id": "test-123"})
+	if err == nil {
+		t.Fatal("expected error for nil contacts client")
+	}
+	if err.Error() != "contacts client not configured" {
+		t.Errorf("expected 'contacts client not configured', got %q", err.Error())
 	}
 }

@@ -48,6 +48,11 @@ type CalendarService struct {
 	dav *dav.Client
 }
 
+// NewCalendarService creates a new calendar service with the given CalDAV client.
+func NewCalendarService(davClient *dav.Client) *CalendarService {
+	return &CalendarService{dav: davClient}
+}
+
 // ListCalendars returns all calendars for the user.
 func (s *CalendarService) ListCalendars(ctx context.Context) ([]Calendar, error) {
 	calendars, err := s.dav.ListCalendars(ctx)

@@ -25,6 +25,10 @@ func newMailCommand() *cobra.Command {
 	cmd.AddCommand(newMailListCommand())
 	cmd.AddCommand(newMailSendCommand())
 	cmd.AddCommand(newMailReplyCommand())
+	cmd.AddCommand(newMailShowCommand())
+	cmd.AddCommand(newMailSearchCommand())
+	cmd.AddCommand(newMailMoveCommand())
+	cmd.AddCommand(newMailDeleteCommand())
 
 	return cmd
 }
@@ -258,5 +262,205 @@ func outputSendResult(cmd *cobra.Command, emailID string) error {
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email sent: %s\n", emailID)
+	return nil
+}
+
+// newMailShowCommand creates the mail show command.
+func newMailShowCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show EMAIL_ID",
+		Short: "Show a single email",
+		Long:  "Display the details of a single email by its ID.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			email, err := client.Mail().Get(ctx, emailID)
+			if err != nil {
+				return fmt.Errorf("getting email: %w", err)
+			}
+
+			return outputEmail(cmd, email)
+		},
+	}
+
+	return cmd
+}
+
+// newMailSearchCommand creates the mail search command.
+func newMailSearchCommand() *cobra.Command {
+	var limit uint64
+
+	cmd := &cobra.Command{
+		Use:   "search QUERY",
+		Short: "Search emails",
+		Long:  "Search emails using a text query.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			query := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			emails, err := client.Mail().Search(ctx, query, limit)
+			if err != nil {
+				return fmt.Errorf("searching emails: %w", err)
+			}
+
+			return outputEmails(cmd, emails)
+		},
+	}
+
+	cmd.Flags().Uint64VarP(&limit, "limit", "n", 10, "maximum emails to return")
+
+	return cmd
+}
+
+// newMailMoveCommand creates the mail move command.
+func newMailMoveCommand() *cobra.Command {
+	var folder string
+
+	cmd := &cobra.Command{
+		Use:   "move EMAIL_ID",
+		Short: "Move an email to a folder",
+		Long:  "Move an email to the specified mailbox folder.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().Move(ctx, emailID, folder); err != nil {
+				return fmt.Errorf("moving email: %w", err)
+			}
+
+			return outputMoveResult(cmd, emailID, folder)
+		},
+	}
+
+	cmd.Flags().StringVarP(&folder, "folder", "f", "", "destination mailbox folder")
+	_ = cmd.MarkFlagRequired("folder")
+
+	return cmd
+}
+
+// newMailDeleteCommand creates the mail delete command.
+func newMailDeleteCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "delete EMAIL_ID",
+		Short: "Delete an email",
+		Long:  "Delete an email by moving it to Trash, or permanently if already in Trash.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			emailID := args[0]
+
+			client, err := createClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			if err := client.Connect(ctx); err != nil {
+				return fmt.Errorf("connecting: %w", err)
+			}
+
+			if err := client.Mail().Delete(ctx, emailID); err != nil {
+				return fmt.Errorf("deleting email: %w", err)
+			}
+
+			return outputDeleteResult(cmd, emailID)
+		},
+	}
+
+	return cmd
+}
+
+// outputEmail writes a single email's details to output.
+func outputEmail(cmd *cobra.Command, email *fastmail.Email) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(email)
+	}
+
+	w := cmd.OutOrStdout()
+	_, _ = fmt.Fprintf(w, "ID:      %s\n", email.ID)
+	_, _ = fmt.Fprintf(w, "Subject: %s\n", email.Subject)
+	_, _ = fmt.Fprintf(w, "From:    %s\n", email.From.String())
+	if len(email.To) > 0 {
+		toStrs := make([]string, len(email.To))
+		for i, addr := range email.To {
+			toStrs[i] = addr.String()
+		}
+		_, _ = fmt.Fprintf(w, "To:      %s\n", strings.Join(toStrs, ", "))
+	}
+	_, _ = fmt.Fprintf(w, "Date:    %s\n", email.ReceivedAt.Format("2006-01-02 15:04:05"))
+	if email.Preview != "" {
+		_, _ = fmt.Fprintf(w, "Preview: %s\n", email.Preview)
+	}
+
+	return nil
+}
+
+// outputMoveResult writes the move result to output.
+func outputMoveResult(cmd *cobra.Command, emailID, folder string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "status": "moved", "folder": folder}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email %s moved to %s\n", emailID, folder)
+	return nil
+}
+
+// outputDeleteResult writes the delete result to output.
+func outputDeleteResult(cmd *cobra.Command, emailID string) error {
+	if IsQuiet() {
+		return nil
+	}
+
+	if IsJSONOutput() {
+		result := map[string]string{"id": emailID, "status": "deleted"}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Email %s deleted\n", emailID)
 	return nil
 }

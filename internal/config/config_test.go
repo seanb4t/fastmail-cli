@@ -184,6 +184,41 @@ func TestDeriveCardDAVEndpoint(t *testing.T) {
 	}
 }
 
+func TestDeriveCalDAVEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		expected string
+	}{
+		{
+			name:     "empty defaults",
+			endpoint: "",
+			expected: defaultCalDAVEndpoint,
+		},
+		{
+			name:     "api host converts to caldav host",
+			endpoint: "https://api.fastmail.com/jmap/session",
+			expected: "https://caldav.fastmail.com/dav/",
+		},
+		{
+			name:     "non-api host preserved",
+			endpoint: "https://mail.example.com/jmap/session",
+			expected: "https://mail.example.com/dav/",
+		},
+		{
+			name:     "invalid url defaults",
+			endpoint: "://bad",
+			expected: defaultCalDAVEndpoint,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, deriveCalDAVEndpoint(tc.endpoint))
+		})
+	}
+}
+
 func TestConfig_Validate_ValidOutputFormats(t *testing.T) {
 	validFormats := []string{"auto", "json", "text"}
 

@@ -21,7 +21,7 @@ func TestMailHelp_ShowsSubcommands(t *testing.T) {
 	output := buf.String()
 
 	// Should show all subcommands
-	subcommands := []string{"list", "send", "reply"}
+	subcommands := []string{"list", "send", "reply", "show", "search", "move", "delete"}
 	for _, sub := range subcommands {
 		if !strings.Contains(output, sub) {
 			t.Errorf("expected %q subcommand in help, got: %q", sub, output)
@@ -181,5 +181,147 @@ func TestParseAddresses_MultipleAddresses(t *testing.T) {
 	}
 	if addrs[1].Name != "Bob" {
 		t.Errorf("expected second name 'Bob', got %q", addrs[1].Name)
+	}
+}
+
+func TestMailShow_RequiresID(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "show"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail show without ID should error")
+	}
+
+	if !strings.Contains(err.Error(), "arg") {
+		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailSearch_RequiresQuery(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "search"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail search without query should error")
+	}
+
+	if !strings.Contains(err.Error(), "arg") {
+		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailMove_RequiresID(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "move"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail move without ID should error")
+	}
+
+	if !strings.Contains(err.Error(), "arg") {
+		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailMove_RequiresFolder(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "move", "email123"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail move without --folder should error")
+	}
+
+	if !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected 'required' in error, got: %v", err)
+	}
+}
+
+func TestMailDelete_RequiresID(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "delete"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("mail delete without ID should error")
+	}
+
+	if !strings.Contains(err.Error(), "arg") {
+		t.Errorf("expected argument error, got: %v", err)
+	}
+}
+
+func TestMailShow_HelpShowsUsage(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "show", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail show --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "EMAIL_ID") {
+		t.Error("expected 'EMAIL_ID' in show help usage")
+	}
+}
+
+func TestMailSearch_HelpShowsFlags(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "search", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail search --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "limit") {
+		t.Error("expected 'limit' flag in search help")
+	}
+	if !strings.Contains(output, "10") {
+		t.Error("expected default limit '10' in search help")
+	}
+}
+
+func TestMailDelete_HelpShowsUsage(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"mail", "delete", "--help"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("mail delete --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "EMAIL_ID") {
+		t.Error("expected 'EMAIL_ID' in delete help usage")
 	}
 }

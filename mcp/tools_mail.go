@@ -271,6 +271,30 @@ func registerMaskedEmailTools(s *Server, cfg ToolsConfig) {
 			WithProperty("description", "string", "Description for the masked email (optional)"),
 		makeMaskedEmailCreateHandler(cfg),
 	)
+
+	// masked_email_enable - Enable a masked email
+	s.RegisterTool(
+		NewTool("masked_email_enable", "Enable a masked email by ID").
+			WithProperty("id", "string", "The masked email ID").
+			WithRequired("id"),
+		makeMaskedEmailEnableHandler(cfg),
+	)
+
+	// masked_email_disable - Disable a masked email
+	s.RegisterTool(
+		NewTool("masked_email_disable", "Disable a masked email by ID").
+			WithProperty("id", "string", "The masked email ID").
+			WithRequired("id"),
+		makeMaskedEmailDisableHandler(cfg),
+	)
+
+	// masked_email_delete - Delete a masked email
+	s.RegisterTool(
+		NewTool("masked_email_delete", "Delete a masked email by ID").
+			WithProperty("id", "string", "The masked email ID").
+			WithRequired("id"),
+		makeMaskedEmailDeleteHandler(cfg),
+	)
 }
 
 func makeMaskedEmailListHandler(cfg ToolsConfig) ToolHandler {
@@ -318,6 +342,60 @@ func makeMaskedEmailCreateHandler(cfg ToolsConfig) ToolHandler {
 	}
 }
 
+func makeMaskedEmailEnableHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		if err := cfg.Client.MaskedEmail().Enable(ctx, id); err != nil {
+			return nil, oops.Wrapf(err, "enabling masked email")
+		}
+
+		return map[string]any{
+			"id":     id,
+			"status": "enabled",
+		}, nil
+	}
+}
+
+func makeMaskedEmailDisableHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		if err := cfg.Client.MaskedEmail().Disable(ctx, id); err != nil {
+			return nil, oops.Wrapf(err, "disabling masked email")
+		}
+
+		return map[string]any{
+			"id":     id,
+			"status": "disabled",
+		}, nil
+	}
+}
+
+func makeMaskedEmailDeleteHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		if err := cfg.Client.MaskedEmail().Delete(ctx, id); err != nil {
+			return nil, oops.Wrapf(err, "deleting masked email")
+		}
+
+		return map[string]any{
+			"id":     id,
+			"status": "deleted",
+		}, nil
+	}
+}
+
 // Contact tools
 
 func registerContactTools(s *Server, cfg ToolsConfig) {
@@ -343,6 +421,25 @@ func registerContactTools(s *Server, cfg ToolsConfig) {
 			WithProperty("phone", "string", "Phone number (optional)").
 			WithRequired("name"),
 		makeContactsCreateHandler(cfg),
+	)
+
+	// contacts_update - Update a contact
+	s.RegisterTool(
+		NewTool("contacts_update", "Update an existing contact").
+			WithProperty("id", "string", "The contact ID").
+			WithProperty("name", "string", "Full name (optional)").
+			WithProperty("email", "string", "Email address (optional)").
+			WithProperty("phone", "string", "Phone number (optional)").
+			WithRequired("id"),
+		makeContactsUpdateHandler(cfg),
+	)
+
+	// contacts_delete - Delete a contact
+	s.RegisterTool(
+		NewTool("contacts_delete", "Delete a contact by ID").
+			WithProperty("id", "string", "The contact ID").
+			WithRequired("id"),
+		makeContactsDeleteHandler(cfg),
 	)
 }
 
@@ -422,6 +519,68 @@ func makeContactsCreateHandler(cfg ToolsConfig) ToolHandler {
 			"email":  contact.Email,
 			"phone":  contact.Phone,
 			"status": "created",
+		}, nil
+	}
+}
+
+func makeContactsUpdateHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		if cfg.Contacts == nil {
+			return nil, oops.Errorf("contacts client not configured")
+		}
+
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		contact, err := cfg.Contacts.Get(ctx, id)
+		if err != nil {
+			return nil, oops.Wrapf(err, "getting contact for update")
+		}
+
+		if name := getStringArg(args, "name", ""); name != "" {
+			contact.Name = name
+		}
+		if email := getStringArg(args, "email", ""); email != "" {
+			contact.Email = email
+		}
+		if phone := getStringArg(args, "phone", ""); phone != "" {
+			contact.Phone = phone
+		}
+
+		if err := cfg.Contacts.Update(ctx, contact); err != nil {
+			return nil, oops.Wrapf(err, "updating contact")
+		}
+
+		return map[string]any{
+			"id":     contact.ID,
+			"name":   contact.Name,
+			"email":  contact.Email,
+			"phone":  contact.Phone,
+			"status": "updated",
+		}, nil
+	}
+}
+
+func makeContactsDeleteHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		if cfg.Contacts == nil {
+			return nil, oops.Errorf("contacts client not configured")
+		}
+
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		if err := cfg.Contacts.Delete(ctx, id); err != nil {
+			return nil, oops.Wrapf(err, "deleting contact")
+		}
+
+		return map[string]any{
+			"id":     id,
+			"status": "deleted",
 		}, nil
 	}
 }
