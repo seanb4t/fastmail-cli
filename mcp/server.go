@@ -90,6 +90,16 @@ func (s *Server) RegisterTool(tool *Tool, handler ToolHandler) {
 	}
 }
 
+// GetToolHandler returns the handler for a named tool, or nil if not found.
+func (s *Server) GetToolHandler(name string) ToolHandler {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if rt, ok := s.tools[name]; ok {
+		return rt.handler
+	}
+	return nil
+}
+
 // RegisterResource adds a resource to the server.
 func (s *Server) RegisterResource(resource *Resource, reader ResourceReader) {
 	s.mu.Lock()

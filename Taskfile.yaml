@@ -33,6 +33,17 @@ tasks:
       - go test -race -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
 
+  test:bdd:
+    desc: Run BDD integration tests
+    cmds:
+      - go test -tags integration -race -v ./test/integration/
+
+  test:all:
+    desc: Run all tests (unit + BDD)
+    cmds:
+      - task: test
+      - task: test:bdd
+
   lint:
     desc: Run linters
     cmds:
