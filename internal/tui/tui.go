@@ -630,14 +630,14 @@ func (m Model) viewDashboard() string {
 	// Render panes
 	sidebarContent := m.mailboxList.view()
 	var mainContent string
-	if m.emailList != nil {
-		if m.emailReader != nil {
-			// Split: email list on top, preview on bottom
-			sv := newSplitView(layout.mainWidth, layout.listHeight+layout.previewHeight, m.panes.splitPct)
-			mainContent = sv.render(m.emailList.view(), m.emailReader.view(), m.theme)
-		} else {
-			mainContent = m.emailList.view()
-		}
+	switch {
+	case m.emailList != nil && m.emailReader != nil:
+		sv := newSplitView(layout.mainWidth, layout.listHeight+layout.previewHeight, m.panes.splitPct)
+		mainContent = sv.render(m.emailList.view(), m.emailReader.view(), m.theme)
+	case m.emailList != nil:
+		mainContent = m.emailList.view()
+	default:
+		mainContent = "Select a mailbox to view emails"
 	}
 
 	// Apply borders
@@ -788,12 +788,20 @@ func (m Model) autoSelectInbox(msg mailboxesLoadedMsg) (tea.Model, tea.Cmd, bool
 		return m, nil, false
 	}
 	for i := range msg.mailboxes {
-		if msg.mailboxes[i].IsInbox() {
-			model, cmd := m.updateView(msg)
-			inbox := msg.mailboxes[i]
-			selectCmd := func() tea.Msg { return mailboxSelectedMsg{mailbox: inbox} }
-			return model, tea.Batch(cmd, selectCmd), true
+		if !msg.mailboxes[i].IsInbox() {
+			continue
 		}
+		// Populate mailbox list synchronously
+		var listCmd tea.Cmd
+		m.mailboxList, listCmd = m.mailboxList.update(msg)
+		// Create email list for inbox directly (no async gap)
+		inbox := msg.mailboxes[i]
+		el := newEmailListModel(inbox)
+		layout := m.panes.computeLayout(m.width, m.height)
+		el.setSize(layout.mainWidth-2, layout.listHeight)
+		m.emailList = &el
+		m.view = viewEmailList
+		return m, tea.Batch(listCmd, m.fetchEmailsCmd(inbox.ID)), true
 	}
 	return m, nil, false
 }

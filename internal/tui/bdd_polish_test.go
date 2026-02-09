@@ -62,14 +62,9 @@ func TestBDD_Polish_AutoSelectInbox(t *testing.T) {
 	}
 
 	// When: mailboxes finish loading
-	var cmd tea.Cmd
-	m, cmd = applyUpdate(m, mailboxesLoadedMsg{mailboxes: mailboxes})
-	// Then: a command to select inbox is batched
-	assert.NotNil(t, cmd)
-	// When: the batched command fires
-	m, _ = applyUpdate(m, cmd())
+	m, _ = applyUpdate(m, mailboxesLoadedMsg{mailboxes: mailboxes})
 
-	// Then: I see the email list for Inbox
+	// Then: I immediately see the email list for Inbox (no empty pane flash)
 	assert.Equal(t, viewEmailList, m.view)
 	assert.NotNil(t, m.emailList)
 	assert.Equal(t, "Inbox", m.emailList.list.Title)

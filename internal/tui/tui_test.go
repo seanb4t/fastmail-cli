@@ -123,14 +123,12 @@ func TestUpdate_MailboxesLoaded_AutoSelectsInbox(t *testing.T) {
 	updated, cmd := m.Update(mailboxesLoadedMsg{mailboxes: mailboxes})
 	model := updated.(Model)
 
-	// The batched command should include a mailboxSelectedMsg for Inbox
-	require.NotNil(t, cmd)
-
-	// Process the batched commands to trigger inbox selection
-	model, _ = applyUpdate(model, cmd())
+	// Inbox selection happens synchronously — no second Update needed
 	assert.Equal(t, viewEmailList, model.view)
 	require.NotNil(t, model.emailList)
 	assert.Equal(t, "Inbox", model.emailList.list.Title)
+	// cmd should include fetchEmailsCmd
+	require.NotNil(t, cmd)
 }
 
 func TestUpdate_MailboxesLoaded_NoInbox_NoAutoSelect(t *testing.T) {
