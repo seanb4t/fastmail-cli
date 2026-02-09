@@ -290,8 +290,9 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "q":
-		// In reader/move picker/thread/attachment/compose views, q means "go back" or is a character — let the view handle it
-		if !m.isFullscreenView() && !m.isFiltering() {
+		// In reader/move picker/thread/attachment/compose views, q means "go back" — let the view handle it.
+		// When preview pane is focused, q dismisses the preview — also let updateView handle it.
+		if !m.isFullscreenView() && !m.isFiltering() && m.panes.focus != PanePreview {
 			m.quit = true
 			return m, tea.Quit, true
 		}
@@ -348,12 +349,19 @@ func (m Model) handleLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) { //n
 }
 
 func (m Model) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// When sidebar is focused in a split-pane view, route keys to the mailbox
-	// list so users can navigate mailboxes while the email list is visible.
+	// When a non-default pane is focused in a split-pane view, route keys to
+	// that pane so users can interact without changing the active view.
 	// Skip in fullscreen/modal views and filter mode where keys belong elsewhere.
-	if m.panes.focus == PaneMailbox && !m.isFullscreenView() && !m.isFiltering() {
+	if !m.isFullscreenView() && !m.isFiltering() {
 		if _, isKey := msg.(tea.KeyMsg); isKey {
-			return m.updateMailboxList(msg)
+			switch m.panes.focus {
+			case PaneMailbox:
+				return m.updateMailboxList(msg)
+			case PanePreview:
+				return m.updateEmailReader(msg)
+			case PaneEmailList:
+				// default: fall through to updateView's view-based routing
+			}
 		}
 	}
 
@@ -459,6 +467,9 @@ func (m Model) updateEmailReader(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if er.goBack {
 		m.emailReader = nil
 		m.view = viewEmailList
+		if m.panes.focus == PanePreview {
+			m.panes.focus = PaneEmailList
+		}
 		return m, nil
 	}
 
