@@ -31,7 +31,7 @@ func helpForView(v view) string {
 		writeBinding(&b, "r", "Toggle read/unread")
 		writeBinding(&b, "f", "Toggle flag")
 		writeBinding(&b, "m", "Move to mailbox")
-		writeBinding(&b, "/", "Filter emails")
+		writeBinding(&b, "/", "Search emails")
 		writeBinding(&b, "esc", "Back to mailboxes")
 		writeBinding(&b, "q", "Quit")
 	case viewEmailReader:

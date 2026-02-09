@@ -299,6 +299,32 @@ func TestUpdate_QuestionMark_IgnoredInEmailReader(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
+func TestUpdate_SearchEmailsCmd(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailList
+	el := newEmailListModel(fastmail.Mailbox{Name: "Inbox", ID: "mb1"})
+	el.list.SetSize(80, 24)
+
+	emails := makeTestEmails()
+	el, _ = el.update(emailsLoadedMsg{emails: emails})
+
+	// Set up search signal
+	query := "test query"
+	el.search = &query
+	el.loading = true
+	m.emailList = &el
+
+	// Call updateEmailList — it should pick up the search signal
+	result, cmd := m.updateEmailList(tea.Msg(nil))
+	model := result.(Model)
+
+	// search signal should be consumed
+	assert.Nil(t, model.emailList.search)
+	// a command should be returned (the searchEmailsCmd)
+	assert.NotNil(t, cmd)
+}
+
 func TestUpdate_EmailReader_FlagAction(t *testing.T) {
 	m := New(nil)
 	m.connecting = false

@@ -102,13 +102,24 @@ func (m Model) fetchEmailBodyCmd(emailID string) tea.Cmd {
 	}
 }
 
+func (m Model) searchEmailsCmd(query string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		emails, err := client.Mail().Search(context.Background(), query, emailPageSize)
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return searchResultsMsg{emails: emails}
+	}
+}
+
 // isFiltering returns true if any active list is in filter mode.
 func (m Model) isFiltering() bool {
 	switch m.view {
 	case viewMailboxList:
 		return m.mailboxList.list.SettingFilter()
 	case viewEmailList:
-		return m.emailList != nil && m.emailList.list.SettingFilter()
+		return m.emailList != nil && (m.emailList.list.SettingFilter() || m.emailList.searchMode)
 	case viewEmailReader:
 		return false
 	case viewMovePicker:
@@ -262,6 +273,13 @@ func (m Model) updateEmailList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.emailReader = &er
 		m.view = viewEmailReader
 		return m, m.fetchEmailBodyCmd(email.ID)
+	}
+
+	if el.search != nil {
+		query := *el.search
+		el.search = nil
+		m.emailList = &el
+		return m, m.searchEmailsCmd(query)
 	}
 
 	if el.action != nil {

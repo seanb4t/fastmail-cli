@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -48,6 +49,11 @@ func (i emailItem) FilterValue() string {
 	return i.email.Subject + " " + i.email.From.String()
 }
 
+// searchResultsMsg carries emails returned from a search query.
+type searchResultsMsg struct {
+	emails []fastmail.Email
+}
+
 // emailListModel manages the email list view for a selected mailbox.
 type emailListModel struct {
 	list          list.Model
@@ -58,6 +64,12 @@ type emailListModel struct {
 	status        statusModel
 	pendingDelete bool
 	action        *emailAction
+	searchInput   textinput.Model
+	searchMode    bool   // actively typing in search input
+	searchActive  bool   // showing search results
+	searchQuery   string // current search query
+	savedItems    []list.Item
+	search        *string // signals parent to run search
 }
 
 func newEmailListModel(mailbox fastmail.Mailbox) emailListModel {
@@ -75,10 +87,15 @@ func newEmailListModel(mailbox fastmail.Mailbox) emailListModel {
 	l.SetFilteringEnabled(true)
 	l.SetShowHelp(true)
 
+	ti := textinput.New()
+	ti.Placeholder = "Search emails..."
+	ti.CharLimit = 256
+
 	return emailListModel{
-		list:    l,
-		mailbox: mailbox,
-		loading: true,
+		list:        l,
+		mailbox:     mailbox,
+		loading:     true,
+		searchInput: ti,
 	}
 }
 
@@ -94,11 +111,22 @@ func (m emailListModel) update(msg tea.Msg) (emailListModel, tea.Cmd) {
 		cmd := m.list.SetItems(items)
 		return m, cmd
 
+	case searchResultsMsg:
+		items := emailsToItems(msg.emails)
+		m.loading = false
+		m.searchActive = true
+		m.list.Title = fmt.Sprintf("Search: %s", m.searchQuery)
+		cmd := m.list.SetItems(items)
+		return m, cmd
+
 	case statusClearMsg:
 		m.status.update(msg)
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.searchMode {
+			return m.handleSearchInput(msg)
+		}
 		if !m.list.SettingFilter() {
 			if handled, cmd := m.handleKey(msg.String()); handled {
 				return m, cmd
@@ -124,12 +152,24 @@ func (m *emailListModel) handleKey(key string) (bool, tea.Cmd) {
 
 	switch key {
 	case keyEsc:
+		if m.searchActive {
+			m.searchActive = false
+			m.searchQuery = ""
+			m.list.Title = m.mailbox.Name
+			cmd := m.list.SetItems(m.savedItems)
+			m.savedItems = nil
+			return true, cmd
+		}
 		m.goBack = true
 		return true, nil
 	case keyEnter:
 		if item, ok := m.list.SelectedItem().(emailItem); ok {
 			m.selected = &item.email
 		}
+		return true, nil
+	case "/":
+		m.searchMode = true
+		m.searchInput.Focus()
 		return true, nil
 	case "a", "r", "m", "f":
 		return m.handleActionKey(key)
@@ -163,12 +203,47 @@ func (m *emailListModel) handleDeleteKey() (bool, tea.Cmd) {
 	return true, m.status.setStatus("Press x again to delete", false)
 }
 
+func (m *emailListModel) handleSearchInput(msg tea.KeyMsg) (emailListModel, tea.Cmd) {
+	switch msg.String() {
+	case keyEsc:
+		m.searchMode = false
+		m.searchInput.Blur()
+		m.searchInput.SetValue("")
+		return *m, nil
+	case keyEnter:
+		query := m.searchInput.Value()
+		if query == "" {
+			m.searchMode = false
+			m.searchInput.Blur()
+			return *m, nil
+		}
+		m.searchMode = false
+		m.searchInput.Blur()
+		m.searchQuery = query
+		m.searchInput.SetValue("")
+		m.loading = true
+		if !m.searchActive {
+			m.savedItems = m.list.Items()
+		}
+		m.search = &query
+		return *m, nil
+	}
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	return *m, cmd
+}
+
 func (m emailListModel) view() string {
 	if m.loading {
+		if m.searchQuery != "" {
+			return fmt.Sprintf("\n  Searching for %q...", m.searchQuery)
+		}
 		return fmt.Sprintf("\n  Loading emails from %s...", m.mailbox.Name)
 	}
 	v := m.list.View()
-	if s := m.status.view(); s != "" {
+	if m.searchMode {
+		v += "\n  " + m.searchInput.View()
+	} else if s := m.status.view(); s != "" {
 		v += "\n" + s
 	}
 	return v

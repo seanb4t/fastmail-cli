@@ -216,3 +216,137 @@ func TestEmailListModel_HandleKey_FlagSetsAction(t *testing.T) {
 	assert.Equal(t, "toggleFlag", m.action.kind)
 	assert.Equal(t, "e1", m.action.email.ID)
 }
+
+func TestEmailListModel_HandleKey_SlashEntersSearchMode(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.loading = false
+
+	m, _ = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+
+	assert.True(t, m.searchMode)
+}
+
+func TestEmailListModel_SearchInput_EscCancels(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.loading = false
+	m.searchMode = true
+	m.searchInput.Focus()
+
+	m, _ = m.update(tea.KeyMsg{Type: tea.KeyEscape})
+
+	assert.False(t, m.searchMode)
+	assert.Empty(t, m.searchInput.Value())
+}
+
+func TestEmailListModel_SearchInput_EnterWithQuery(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.list.SetSize(80, 24)
+
+	emails := makeTestEmails()
+	m, _ = m.update(emailsLoadedMsg{emails: emails})
+
+	// Enter search mode
+	m.searchMode = true
+	m.searchInput.Focus()
+	m.searchInput.SetValue("test query")
+
+	// Press enter
+	m, _ = m.update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	assert.False(t, m.searchMode)
+	assert.True(t, m.loading)
+	assert.Equal(t, "test query", m.searchQuery)
+	require.NotNil(t, m.search)
+	assert.Equal(t, "test query", *m.search)
+	// Original items should be saved
+	assert.NotNil(t, m.savedItems)
+}
+
+func TestEmailListModel_SearchInput_EnterEmpty(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.loading = false
+	m.searchMode = true
+	m.searchInput.Focus()
+	m.searchInput.SetValue("")
+
+	m, _ = m.update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	assert.False(t, m.searchMode)
+	assert.Nil(t, m.search)
+}
+
+func TestEmailListModel_EscClearsSearchResults(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.list.SetSize(80, 24)
+
+	// Load original emails
+	emails := makeTestEmails()
+	m, _ = m.update(emailsLoadedMsg{emails: emails})
+	originalCount := len(m.list.Items())
+
+	// Simulate search results being active
+	m.searchActive = true
+	m.searchQuery = "test"
+	m.savedItems = m.list.Items()
+	m.list.Title = "Search: test"
+
+	// Set search results (fewer items)
+	searchResults := []fastmail.Email{emails[0]}
+	searchItems := emailsToItems(searchResults)
+	m.list.SetItems(searchItems)
+
+	// Press esc to clear search
+	m, _ = m.update(tea.KeyMsg{Type: tea.KeyEscape})
+
+	assert.False(t, m.searchActive)
+	assert.Empty(t, m.searchQuery)
+	assert.Equal(t, mb.Name, m.list.Title)
+	assert.Equal(t, originalCount, len(m.list.Items()))
+	assert.Nil(t, m.savedItems)
+}
+
+func TestEmailListModel_View_SearchMode(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.list.SetSize(80, 24)
+	m.loading = false
+	m.searchMode = true
+	m.searchInput.Focus()
+
+	v := m.view()
+	assert.Contains(t, v, "Search emails")
+}
+
+func TestEmailListModel_View_SearchLoading(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.loading = true
+	m.searchQuery = "important"
+
+	v := m.view()
+	assert.Contains(t, v, "Searching for")
+	assert.Contains(t, v, `"important"`)
+}
+
+func TestEmailListModel_Update_SearchResults(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.list.SetSize(80, 24)
+	m.loading = true
+	m.searchQuery = "test"
+
+	results := []fastmail.Email{
+		{ID: "s1", Subject: "Search Result"},
+	}
+	m, _ = m.update(searchResultsMsg{emails: results})
+
+	assert.False(t, m.loading)
+	assert.True(t, m.searchActive)
+	assert.Contains(t, m.list.Title, "Search:")
+	assert.Equal(t, 1, len(m.list.Items()))
+}

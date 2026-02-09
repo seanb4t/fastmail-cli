@@ -26,7 +26,7 @@ func TestHelpForView_EmailList(t *testing.T) {
 	assert.Contains(t, content, "Toggle read/unread")
 	assert.Contains(t, content, "Toggle flag")
 	assert.Contains(t, content, "Move to mailbox")
-	assert.Contains(t, content, "Filter emails")
+	assert.Contains(t, content, "Search emails")
 	assert.Contains(t, content, "Back to mailboxes")
 	assert.Contains(t, content, "Show this help")
 }
