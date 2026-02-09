@@ -49,4 +49,9 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerIdentitySteps(sc)
 	registerSieveSteps(sc)
 	registerQuotaSteps(sc)
+	registerMCPResourceSteps(sc)
+	registerExportSteps(sc)
+	registerAuthSteps(sc)
+	registerContactSteps(sc)
+	registerCalendarSteps(sc)
 }
