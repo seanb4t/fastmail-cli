@@ -344,6 +344,72 @@ func TestUpdate_SearchEmailsCmd(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
+func TestUpdate_AttachmentPicker_Cancel(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewAttachmentPicker
+
+	// Set up an email reader to return to
+	email := fastmail.Email{ID: "e1", Subject: "Test"}
+	er := newEmailReaderModel(email)
+	er.setSize(80, 24)
+	m.emailReader = &er
+
+	// Set up attachment picker
+	attachments := []fastmail.Attachment{
+		{BlobID: "b1", Name: "file.pdf", Type: "application/pdf", Size: 1024},
+	}
+	ap := newAttachmentPickerModel("e1", attachments)
+	ap.setSize(80, 24)
+	m.attachmentPicker = &ap
+
+	// Press esc to cancel
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	model := updated.(Model)
+
+	assert.Equal(t, viewEmailReader, model.view)
+	assert.Nil(t, model.attachmentPicker)
+}
+
+func TestUpdate_AttachmentDownloaded(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailReader
+
+	email := fastmail.Email{ID: "e1", Subject: "Test"}
+	er := newEmailReaderModel(email)
+	er.setSize(80, 24)
+	m.emailReader = &er
+
+	updated, cmd := m.Update(attachmentDownloadedMsg{name: "report.pdf", path: "/tmp/report.pdf"})
+	model := updated.(Model)
+
+	// Status message should be set on the reader
+	require.NotNil(t, model.emailReader)
+	assert.True(t, model.emailReader.status.visible)
+	assert.Contains(t, model.emailReader.status.message, "Downloaded report.pdf")
+	assert.NotNil(t, cmd) // tick cmd for status clear
+}
+
+func TestUpdate_AttachmentDownloadErr(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailReader
+
+	email := fastmail.Email{ID: "e1", Subject: "Test"}
+	er := newEmailReaderModel(email)
+	er.setSize(80, 24)
+	m.emailReader = &er
+
+	updated, cmd := m.Update(attachmentDownloadErrMsg{err: assert.AnError, name: "report.pdf"})
+	model := updated.(Model)
+
+	require.NotNil(t, model.emailReader)
+	assert.True(t, model.emailReader.status.visible)
+	assert.Contains(t, model.emailReader.status.message, "Download failed")
+	assert.NotNil(t, cmd)
+}
+
 func TestUpdate_EmailReader_FlagAction(t *testing.T) {
 	m := New(nil)
 	m.connecting = false

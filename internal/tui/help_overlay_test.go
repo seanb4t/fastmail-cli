@@ -43,6 +43,7 @@ func TestHelpForView_EmailReader(t *testing.T) {
 	assert.Contains(t, content, "Toggle read/unread")
 	assert.Contains(t, content, "Toggle flag")
 	assert.Contains(t, content, "Move to mailbox")
+	assert.Contains(t, content, "Attachments")
 	assert.Contains(t, content, "Back to email list")
 	assert.Contains(t, content, "View thread")
 	assert.Contains(t, content, "Show this help")
@@ -53,6 +54,15 @@ func TestHelpForView_ThreadView(t *testing.T) {
 
 	assert.Contains(t, content, "Thread View")
 	assert.Contains(t, content, "View email")
+	assert.Contains(t, content, "Back to reader")
+	assert.Contains(t, content, "Show this help")
+}
+
+func TestHelpForView_AttachmentPicker(t *testing.T) {
+	content := helpForView(viewAttachmentPicker)
+
+	assert.Contains(t, content, "Attachments")
+	assert.Contains(t, content, "Download attachment")
 	assert.Contains(t, content, "Back to reader")
 	assert.Contains(t, content, "Show this help")
 }

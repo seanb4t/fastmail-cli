@@ -45,12 +45,18 @@ func helpForView(v view) string {
 		writeBinding(&b, "r", "Toggle read/unread")
 		writeBinding(&b, "f", "Toggle flag")
 		writeBinding(&b, "m", "Move to mailbox")
+		writeBinding(&b, "A", "Attachments")
 		writeBinding(&b, "t", "View thread")
 		writeBinding(&b, "q/esc", "Back to email list")
 	case viewThreadView:
 		b.WriteString(helpTitleStyle.Render("Keybindings — Thread View"))
 		b.WriteString("\n\n")
 		writeBinding(&b, "enter", "View email")
+		writeBinding(&b, "q/esc", "Back to reader")
+	case viewAttachmentPicker:
+		b.WriteString(helpTitleStyle.Render("Keybindings — Attachments"))
+		b.WriteString("\n\n")
+		writeBinding(&b, "enter", "Download attachment")
 		writeBinding(&b, "q/esc", "Back to reader")
 	case viewMovePicker:
 		return ""

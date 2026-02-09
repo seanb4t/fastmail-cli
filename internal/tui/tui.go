@@ -4,6 +4,9 @@ package tui
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,6 +23,7 @@ const (
 	viewEmailReader
 	viewMovePicker
 	viewThreadView
+	viewAttachmentPicker
 )
 
 // errMsg wraps errors from async commands.
@@ -30,20 +34,21 @@ type connectedMsg struct{}
 
 // Model is the top-level bubbletea model.
 type Model struct {
-	client       *fastmail.Client
-	view         view
-	mailboxList  mailboxListModel
-	emailList    *emailListModel
-	emailReader  *emailReaderModel
-	movePicker   *movePickerModel
-	threadView   *threadViewModel
-	actionSource view // which view initiated the current action
-	width        int
-	height       int
-	err          error
-	quit         bool
-	connecting   bool
-	helpOverlay  bool
+	client           *fastmail.Client
+	view             view
+	mailboxList      mailboxListModel
+	emailList        *emailListModel
+	emailReader      *emailReaderModel
+	movePicker       *movePickerModel
+	threadView       *threadViewModel
+	attachmentPicker *attachmentPickerModel
+	actionSource     view // which view initiated the current action
+	width            int
+	height           int
+	err              error
+	quit             bool
+	connecting       bool
+	helpOverlay      bool
 }
 
 // New creates a new TUI model with the given client.
@@ -139,6 +144,8 @@ func (m Model) isFiltering() bool {
 		return m.movePicker != nil && m.movePicker.list.SettingFilter()
 	case viewThreadView:
 		return false
+	case viewAttachmentPicker:
+		return false
 	}
 	return false
 }
@@ -152,21 +159,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.mailboxList.setSize(msg.Width, msg.Height)
-		if m.emailList != nil {
-			m.emailList.setSize(msg.Width, msg.Height)
-		}
-		if m.emailReader != nil {
-			m.emailReader.setSize(msg.Width, msg.Height)
-		}
-		if m.movePicker != nil {
-			m.movePicker.setSize(msg.Width, msg.Height)
-		}
-		if m.threadView != nil {
-			m.threadView.setSize(msg.Width, msg.Height)
-		}
+		m.handleWindowSize(msg)
 
 	case threadLoadedMsg:
 		if m.threadView != nil {
@@ -208,6 +201,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.view = viewMovePicker
 		return m, nil
 
+	case attachmentDownloadedMsg:
+		if m.emailReader != nil {
+			return m, m.emailReader.status.setStatus(fmt.Sprintf("Downloaded %s", msg.name), false)
+		}
+		return m, nil
+
+	case attachmentDownloadErrMsg:
+		if m.emailReader != nil {
+			return m, m.emailReader.status.setStatus(fmt.Sprintf("Download failed: %v", msg.err), true)
+		}
+		return m, nil
+
 	case errMsg:
 		m.err = msg.err
 		m.connecting = false
@@ -216,6 +221,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Delegate to current view
 	return m.updateView(msg)
+}
+
+// handleWindowSize propagates a resize to all sub-models.
+func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) {
+	m.width = msg.Width
+	m.height = msg.Height
+	m.mailboxList.setSize(msg.Width, msg.Height)
+	if m.emailList != nil {
+		m.emailList.setSize(msg.Width, msg.Height)
+	}
+	if m.emailReader != nil {
+		m.emailReader.setSize(msg.Width, msg.Height)
+	}
+	if m.movePicker != nil {
+		m.movePicker.setSize(msg.Width, msg.Height)
+	}
+	if m.threadView != nil {
+		m.threadView.setSize(msg.Width, msg.Height)
+	}
+	if m.attachmentPicker != nil {
+		m.attachmentPicker.setSize(msg.Width, msg.Height)
+	}
 }
 
 // handleGlobalKeys processes top-level keybindings before view delegation.
@@ -232,8 +259,8 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "q":
-		// In reader/move picker/thread views, q means "go back" — let the view handle it
-		if m.view != viewEmailReader && m.view != viewMovePicker && m.view != viewThreadView && !m.isFiltering() {
+		// In reader/move picker/thread/attachment views, q means "go back" — let the view handle it
+		if m.view != viewEmailReader && m.view != viewMovePicker && m.view != viewThreadView && m.view != viewAttachmentPicker && !m.isFiltering() {
 			m.quit = true
 			return m, tea.Quit, true
 		}
@@ -258,6 +285,8 @@ func (m Model) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateMovePicker(msg)
 	case viewThreadView:
 		return m.updateThreadView(msg)
+	case viewAttachmentPicker:
+		return m.updateAttachmentPicker(msg)
 	}
 	return m, nil
 }
@@ -346,6 +375,16 @@ func (m Model) updateEmailReader(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fetchThreadCmd(er.email.ThreadID)
 	}
 
+	if er.showAttachments {
+		er.showAttachments = false
+		m.emailReader = &er
+		ap := newAttachmentPickerModel(er.email.ID, er.email.Attachments)
+		ap.setSize(m.width, m.height)
+		m.attachmentPicker = &ap
+		m.view = viewAttachmentPicker
+		return m, nil
+	}
+
 	if er.action != nil {
 		act := *er.action
 		er.action = nil
@@ -373,6 +412,66 @@ func (m Model) updateThreadView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+func (m Model) updateAttachmentPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.attachmentPicker == nil {
+		return m, nil
+	}
+
+	ap := *m.attachmentPicker
+	var cmd tea.Cmd
+	ap, cmd = ap.update(msg)
+	m.attachmentPicker = &ap
+
+	if ap.canceled {
+		m.attachmentPicker = nil
+		m.view = viewEmailReader
+		return m, nil
+	}
+
+	if ap.selected != nil {
+		att := *ap.selected
+		m.attachmentPicker = nil
+		m.view = viewEmailReader
+		return m, m.downloadAttachmentCmd(att)
+	}
+
+	return m, cmd
+}
+
+func (m Model) downloadAttachmentCmd(att fastmail.Attachment) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		reader, err := client.Mail().DownloadAttachment(context.Background(), att.BlobID, att.Name)
+		if err != nil {
+			return attachmentDownloadErrMsg{err: err, name: att.Name}
+		}
+		defer func() { _ = reader.Close() }()
+
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return attachmentDownloadErrMsg{err: err, name: att.Name}
+		}
+
+		path := filepath.Join(home, "Downloads", att.Name)
+
+		f, err := os.Create(path) //nolint:gosec // User-initiated download to known directory
+		if err != nil {
+			return attachmentDownloadErrMsg{err: err, name: att.Name}
+		}
+
+		if _, copyErr := io.Copy(f, reader); copyErr != nil {
+			_ = f.Close()
+			return attachmentDownloadErrMsg{err: copyErr, name: att.Name}
+		}
+
+		if closeErr := f.Close(); closeErr != nil {
+			return attachmentDownloadErrMsg{err: closeErr, name: att.Name}
+		}
+
+		return attachmentDownloadedMsg{name: att.Name, path: path}
+	}
 }
 
 // View implements tea.Model.
@@ -412,6 +511,10 @@ func (m Model) View() string {
 	case viewThreadView:
 		if m.threadView != nil {
 			return m.threadView.view()
+		}
+	case viewAttachmentPicker:
+		if m.attachmentPicker != nil {
+			return m.attachmentPicker.view()
 		}
 	}
 
@@ -486,7 +589,7 @@ func (m Model) handleActionDone(msg emailActionDoneMsg) (tea.Model, tea.Cmd) {
 		if m.emailReader != nil {
 			cmd = m.emailReader.status.setStatus(msg.action, false)
 		}
-	case viewMailboxList, viewMovePicker, viewThreadView:
+	case viewMailboxList, viewMovePicker, viewThreadView, viewAttachmentPicker:
 		// No status to show on these views
 	}
 
@@ -507,7 +610,7 @@ func (m Model) handleActionErr(msg emailActionErrMsg) (tea.Model, tea.Cmd) {
 		if m.emailReader != nil {
 			cmd = m.emailReader.status.setStatus(errText, true)
 		}
-	case viewMailboxList, viewMovePicker, viewThreadView:
+	case viewMailboxList, viewMovePicker, viewThreadView, viewAttachmentPicker:
 		// Actions are not initiated from these views
 	}
 
