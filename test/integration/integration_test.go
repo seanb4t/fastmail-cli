@@ -43,4 +43,10 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 
 	registerMailSteps(sc)
 	registerMCPSteps(sc)
+	registerMailboxSteps(sc)
+	registerMaskedEmailSteps(sc)
+	registerVacationSteps(sc)
+	registerIdentitySteps(sc)
+	registerSieveSteps(sc)
+	registerQuotaSteps(sc)
 }

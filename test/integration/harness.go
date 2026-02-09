@@ -11,6 +11,16 @@ import (
 	"sync"
 )
 
+// MethodHandlerFunc handles a single JMAP method call in the mock server.
+type MethodHandlerFunc func(w *World, args map[string]any) map[string]any
+
+var extensionHandlers = map[string]MethodHandlerFunc{}
+
+// RegisterMethodHandler registers an extension JMAP method handler for integration tests.
+func RegisterMethodHandler(method string, handler MethodHandlerFunc) {
+	extensionHandlers[method] = handler
+}
+
 // World holds shared test state across scenario steps.
 type World struct {
 	mu sync.Mutex
@@ -33,6 +43,10 @@ type World struct {
 	ToolResult    any
 	ToolError     error
 	SearchResults []map[string]any
+
+	// DomainData holds per-scenario state for domain-specific test extensions.
+	// Each domain stores/retrieves typed state using its own key.
+	DomainData map[string]any
 }
 
 // MockMailbox holds mailbox test data.
@@ -84,17 +98,25 @@ func SessionResponse(apiURL string) string {
 		"capabilities": {
 			"urn:ietf:params:jmap:core": {},
 			"urn:ietf:params:jmap:mail": {},
-			"urn:ietf:params:jmap:submission": {}
+			"urn:ietf:params:jmap:submission": {},
+			"urn:ietf:params:jmap:quota": {},
+			"urn:ietf:params:jmap:sieve": {}
 		},
 		"accounts": {
 			"acc1": {
 				"name": "test@example.com",
 				"isPersonal": true,
 				"isReadOnly": false,
-				"accountCapabilities": {"urn:ietf:params:jmap:mail": {}}
+				"accountCapabilities": {
+					"urn:ietf:params:jmap:mail": {},
+					"urn:ietf:params:jmap:sieve": {}
+				}
 			}
 		},
-		"primaryAccounts": {"urn:ietf:params:jmap:mail": "acc1"},
+		"primaryAccounts": {
+			"urn:ietf:params:jmap:mail": "acc1",
+			"urn:ietf:params:jmap:sieve": "acc1"
+		},
 		"username": "test@example.com",
 		"apiUrl": "` + apiURL + `",
 		"downloadUrl": "https://example.com/download",
@@ -165,6 +187,11 @@ func handleJMAPRequest(w *World, rw http.ResponseWriter, r *http.Request) {
 //
 //nolint:gocognit,gocyclo // test helper with method dispatch
 func dispatchMethod(w *World, method string, args map[string]any) map[string]any {
+	// Check extension handlers first so domain tests can override built-in responses.
+	if handler, ok := extensionHandlers[method]; ok {
+		return handler(w, args)
+	}
+
 	switch method {
 	case "Mailbox/get":
 		return mailboxGetResponse(w)
