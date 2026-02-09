@@ -625,6 +625,14 @@ func registerMaskedEmailTools(s *Server, cfg ToolsConfig) {
 		makeMaskedEmailListHandler(cfg),
 	)
 
+	// masked_email_get - Get masked email by ID
+	s.RegisterTool(
+		NewTool("masked_email_get", "Get a single masked email by ID").
+			WithProperty("id", "string", "The masked email ID").
+			WithRequired("id"),
+		makeMaskedEmailGetHandler(cfg),
+	)
+
 	// masked_email_create - Create masked email
 	s.RegisterTool(
 		NewTool("masked_email_create", "Create a new masked email address").
@@ -678,6 +686,32 @@ func makeMaskedEmailListHandler(cfg ToolsConfig) ToolHandler {
 			}
 		}
 		return result, nil
+	}
+}
+
+func makeMaskedEmailGetHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		email, err := cfg.Client.MaskedEmail().Get(ctx, id)
+		if err != nil {
+			return nil, oops.Wrapf(err, "getting masked email")
+		}
+
+		return map[string]any{
+			"id":              email.ID,
+			"email":           email.Email,
+			"state":           string(email.State),
+			"for_domain":      email.ForDomain,
+			"description":     email.Description,
+			"url":             email.URL,
+			"created_by":      email.CreatedBy,
+			"created_at":      email.CreatedAt,
+			"last_message_at": email.LastMessageAt,
+		}, nil
 	}
 }
 

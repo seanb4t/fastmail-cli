@@ -158,6 +158,18 @@ func (r *ResourceRegistry) registerDefaults() {
 			WithMimeType("text/plain"),
 		r.handleMaskedEmails,
 	)
+
+	// fastmail://masked-email/{id} - Single masked email (template)
+	r.registerTemplate(
+		ResourceTemplate{
+			URITemplate: "fastmail://masked-email/{id}",
+			Name:        "Masked Email",
+			Description: "Details of a specific masked email address",
+			MimeType:    "text/plain",
+		},
+		regexp.MustCompile(`^fastmail://masked-email/(?P<id>[^/]+)$`),
+		r.handleMaskedEmail,
+	)
 }
 
 // handleInbox returns recent inbox messages.
@@ -242,6 +254,59 @@ func (r *ResourceRegistry) handleMaskedEmails(ctx context.Context, _ map[string]
 		MimeType: "text/plain",
 		Text:     content,
 	}, nil
+}
+
+// handleMaskedEmail returns a single masked email by ID.
+func (r *ResourceRegistry) handleMaskedEmail(ctx context.Context, params map[string]string) (*ResourceContent, error) {
+	if r.client == nil {
+		return nil, oops.Errorf("client not configured")
+	}
+
+	id := params["id"]
+	if id == "" {
+		return nil, oops.Errorf("masked email ID required")
+	}
+
+	me, err := r.client.MaskedEmail().Get(ctx, id)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting masked email %s", id)
+	}
+
+	content := formatMaskedEmail(me)
+	return &ResourceContent{
+		URI:      fmt.Sprintf("fastmail://masked-email/%s", id),
+		MimeType: "text/plain",
+		Text:     content,
+	}, nil
+}
+
+// formatMaskedEmail formats a single masked email for LLM readability.
+func formatMaskedEmail(me *fastmail.MaskedEmail) string {
+	var b strings.Builder
+
+	b.WriteString(fmt.Sprintf("# %s\n\n", me.Email))
+	b.WriteString(fmt.Sprintf("- ID: %s\n", me.ID))
+	b.WriteString(fmt.Sprintf("- State: %s\n", me.State))
+	if me.ForDomain != "" {
+		b.WriteString(fmt.Sprintf("- Domain: %s\n", me.ForDomain))
+	}
+	if me.Description != "" {
+		b.WriteString(fmt.Sprintf("- Description: %s\n", me.Description))
+	}
+	if me.URL != "" {
+		b.WriteString(fmt.Sprintf("- URL: %s\n", me.URL))
+	}
+	if me.CreatedBy != "" {
+		b.WriteString(fmt.Sprintf("- Created By: %s\n", me.CreatedBy))
+	}
+	if me.CreatedAt != "" {
+		b.WriteString(fmt.Sprintf("- Created: %s\n", me.CreatedAt))
+	}
+	if me.LastMessageAt != "" {
+		b.WriteString(fmt.Sprintf("- Last Message: %s\n", me.LastMessageAt))
+	}
+
+	return b.String()
 }
 
 // formatEmailList formats a list of emails for LLM readability.

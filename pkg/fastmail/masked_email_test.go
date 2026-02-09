@@ -108,6 +108,97 @@ func TestMaskedEmailService_List(t *testing.T) {
 	assert.Equal(t, MaskedEmailStateDisabled, emails[1].State)
 }
 
+func TestMaskedEmailService_Get(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		methodCalls := req["methodCalls"].([]any)
+		firstCall := methodCalls[0].([]any)
+		methodName := firstCall[0].(string)
+		args := firstCall[1].(map[string]any)
+
+		assert.Equal(t, "MaskedEmail/get", methodName)
+		assert.Equal(t, []any{"me-1"}, args["ids"])
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["MaskedEmail/get", {
+					"accountId": "acc1",
+					"state": "me1",
+					"list": [
+						{
+							"id": "me-1",
+							"email": "abc123@fastmail.com",
+							"state": "enabled",
+							"forDomain": "example.com",
+							"description": "Shopping site",
+							"createdAt": "2024-01-15T10:30:00Z",
+							"lastMessageAt": "2024-01-20T15:00:00Z"
+						}
+					],
+					"notFound": []
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(maskedEmailSessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	email, err := client.MaskedEmail().Get(ctx, "me-1")
+	require.NoError(t, err)
+	require.NotNil(t, email)
+
+	assert.Equal(t, "me-1", email.ID)
+	assert.Equal(t, "abc123@fastmail.com", email.Email)
+	assert.Equal(t, MaskedEmailStateEnabled, email.State)
+	assert.Equal(t, "example.com", email.ForDomain)
+	assert.Equal(t, "Shopping site", email.Description)
+}
+
+func TestMaskedEmailService_Get_NotFound(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"sessionState": "s1",
+			"methodResponses": [
+				["MaskedEmail/get", {
+					"accountId": "acc1",
+					"state": "me1",
+					"list": [],
+					"notFound": ["nonexistent"]
+				}, "0"]
+			]
+		}`))
+	}))
+	defer apiServer.Close()
+
+	sessionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(maskedEmailSessionResponse(apiServer.URL)))
+	}))
+	defer sessionServer.Close()
+
+	client := NewClient(sessionServer.URL, "test-token")
+	ctx := context.Background()
+
+	email, err := client.MaskedEmail().Get(ctx, "nonexistent")
+	assert.Error(t, err)
+	assert.Nil(t, email)
+	assert.Contains(t, err.Error(), "not found")
+}
+
 func TestMaskedEmailService_Create(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any

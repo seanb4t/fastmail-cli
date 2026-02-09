@@ -78,6 +78,43 @@ func (s *MaskedEmailService) List(ctx context.Context) ([]MaskedEmail, error) {
 	return convertMaskedEmails(getResp.List), nil
 }
 
+// Get returns a single masked email by ID.
+func (s *MaskedEmailService) Get(ctx context.Context, id string) (*MaskedEmail, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	getBuilder := jmap.NewMaskedEmailGet(accountID).IDs(id)
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.MaskedEmailCapability)
+	callID := req.Invoke("MaskedEmail/get", getBuilder.Build())
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return nil, oops.Errorf("get failed: %s", result.Error())
+	}
+
+	var getResp jmap.MaskedEmailGetResponse
+	if err := result.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding response")
+	}
+
+	if len(getResp.List) == 0 {
+		return nil, oops.Errorf("masked email not found: %s", id)
+	}
+
+	return convertMaskedEmail(&getResp.List[0]), nil
+}
+
 // Create creates a new masked email address.
 func (s *MaskedEmailService) Create(ctx context.Context, opts CreateMaskedEmailOptions) (*MaskedEmail, error) {
 	accountID, err := s.client.getAccountID(ctx)
