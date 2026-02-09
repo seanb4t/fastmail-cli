@@ -201,3 +201,18 @@ func TestTruncate(t *testing.T) {
 	assert.Equal(t, "hel…", truncate("hello world", 4))
 	assert.Equal(t, "", truncate("", 5))
 }
+
+func TestEmailListModel_HandleKey_FlagSetsAction(t *testing.T) {
+	mb := fastmail.Mailbox{Name: "Inbox", ID: "mb1"}
+	m := newEmailListModel(mb)
+	m.list.SetSize(80, 24)
+
+	emails := makeTestEmails()
+	m, _ = m.update(emailsLoadedMsg{emails: emails})
+
+	m, _ = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+
+	require.NotNil(t, m.action)
+	assert.Equal(t, "toggleFlag", m.action.kind)
+	assert.Equal(t, "e1", m.action.email.ID)
+}

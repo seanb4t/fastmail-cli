@@ -322,6 +322,8 @@ func (m Model) dispatchAction(act emailAction, source view) (tea.Model, tea.Cmd)
 		return m, deleteEmailCmd(m.client, act.email.ID)
 	case "toggleRead":
 		return m, toggleReadCmd(m.client, act.email.ID, act.email.IsRead())
+	case "toggleFlag":
+		return m, toggleFlagCmd(m.client, act.email.ID, act.email.IsFlagged())
 	case "move":
 		return m, m.fetchMailboxesForMoveCmd(act.email.ID)
 	}
@@ -428,24 +430,41 @@ func (m Model) updateEmailInList(emailID, action string) {
 	items := m.emailList.list.Items()
 	for i, item := range items {
 		if ei, ok := item.(emailItem); ok && ei.email.ID == emailID {
-			switch action {
-			case "Marked read":
-				if !ei.email.IsRead() {
-					ei.email.Keywords = append(ei.email.Keywords, fastmail.KeywordSeen)
-				}
-			case "Marked unread":
-				keywords := make([]string, 0, len(ei.email.Keywords))
-				for _, kw := range ei.email.Keywords {
-					if kw != fastmail.KeywordSeen {
-						keywords = append(keywords, kw)
-					}
-				}
-				ei.email.Keywords = keywords
-			}
+			ei.email.Keywords = applyKeywordAction(ei.email, action)
 			m.emailList.list.SetItem(i, ei)
 			return
 		}
 	}
+}
+
+// applyKeywordAction returns updated keywords for an email based on the action.
+func applyKeywordAction(email fastmail.Email, action string) []string {
+	switch action {
+	case "Marked read":
+		if !email.IsRead() {
+			return append(email.Keywords, fastmail.KeywordSeen)
+		}
+	case "Marked unread":
+		return removeKeyword(email.Keywords, fastmail.KeywordSeen)
+	case "Flagged":
+		if !email.IsFlagged() {
+			return append(email.Keywords, fastmail.KeywordFlagged)
+		}
+	case "Unflagged":
+		return removeKeyword(email.Keywords, fastmail.KeywordFlagged)
+	}
+	return email.Keywords
+}
+
+// removeKeyword returns a copy of keywords with the specified keyword removed.
+func removeKeyword(keywords []string, keyword string) []string {
+	result := make([]string, 0, len(keywords))
+	for _, kw := range keywords {
+		if kw != keyword {
+			result = append(result, kw)
+		}
+	}
+	return result
 }
 
 func (m Model) updateMovePicker(msg tea.Msg) (tea.Model, tea.Cmd) {

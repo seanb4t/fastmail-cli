@@ -181,3 +181,76 @@ func TestView_EmailList(t *testing.T) {
 	v := m.View()
 	assert.Contains(t, v, "Inbox")
 }
+
+func TestDispatchAction_ToggleFlag(t *testing.T) {
+	m := New(nil)
+	email := fastmail.Email{ID: "e1", Keywords: []string{}}
+	act := emailAction{kind: "toggleFlag", email: email}
+
+	_, cmd := m.dispatchAction(act, viewEmailList)
+
+	assert.NotNil(t, cmd)
+}
+
+func TestHandleActionDone_Flagged(t *testing.T) {
+	m := New(nil)
+	el := newEmailListModel(fastmail.Mailbox{Name: "Inbox", ID: "mb1"})
+	el.list.SetSize(80, 24)
+	emails := []fastmail.Email{
+		{ID: "e1", Subject: "Test", Keywords: []string{}},
+	}
+	el, _ = el.update(emailsLoadedMsg{emails: emails})
+	m.emailList = &el
+	m.view = viewEmailList
+
+	result, _ := m.handleActionDone(emailActionDoneMsg{action: "Flagged", emailID: "e1"})
+	updated := result.(Model)
+
+	// Verify the email now has the $flagged keyword
+	items := updated.emailList.list.Items()
+	require.Len(t, items, 1)
+	ei := items[0].(emailItem)
+	assert.True(t, ei.email.IsFlagged())
+}
+
+func TestHandleActionDone_Unflagged(t *testing.T) {
+	m := New(nil)
+	el := newEmailListModel(fastmail.Mailbox{Name: "Inbox", ID: "mb1"})
+	el.list.SetSize(80, 24)
+	emails := []fastmail.Email{
+		{ID: "e1", Subject: "Test", Keywords: []string{"$flagged", "$seen"}},
+	}
+	el, _ = el.update(emailsLoadedMsg{emails: emails})
+	m.emailList = &el
+	m.view = viewEmailList
+
+	result, _ := m.handleActionDone(emailActionDoneMsg{action: "Unflagged", emailID: "e1"})
+	updated := result.(Model)
+
+	// Verify the email no longer has the $flagged keyword
+	items := updated.emailList.list.Items()
+	require.Len(t, items, 1)
+	ei := items[0].(emailItem)
+	assert.False(t, ei.email.IsFlagged())
+	// $seen should still be present
+	assert.True(t, ei.email.IsRead())
+}
+
+func TestUpdate_EmailReader_FlagAction(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailReader
+	email := fastmail.Email{ID: "e1", Subject: "Test", Keywords: []string{"$flagged"}}
+	er := newEmailReaderModel(email)
+	er.setSize(80, 24)
+	m.emailReader = &er
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	model := updated.(Model)
+
+	require.NotNil(t, model.emailReader)
+	// After dispatching, the action should have been consumed and dispatched
+	// The reader's action field is cleared after dispatch in updateEmailReader
+	// We can verify the action source was set correctly
+	assert.Equal(t, viewEmailReader, model.actionSource)
+}

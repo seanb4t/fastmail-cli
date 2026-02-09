@@ -10,7 +10,7 @@ import (
 
 // emailAction signals the parent model to execute an email action.
 type emailAction struct {
-	kind  string // "archive", "delete", "toggleRead", "move"
+	kind  string // "archive", "delete", "toggleRead", "toggleFlag", "move"
 	email fastmail.Email
 }
 
@@ -64,6 +64,22 @@ func toggleReadCmd(client *fastmail.Client, emailID string, isRead bool) tea.Cmd
 		label := "Marked read"
 		if isRead {
 			label = "Marked unread"
+		}
+		return emailActionDoneMsg{action: label, emailID: emailID}
+	}
+}
+
+func toggleFlagCmd(client *fastmail.Client, emailID string, isFlagged bool) tea.Cmd {
+	return func() tea.Msg {
+		actions := []fastmail.KeywordAction{
+			{Keyword: fastmail.KeywordFlagged, Set: !isFlagged},
+		}
+		if err := client.Mail().SetKeywords(context.Background(), emailID, actions); err != nil {
+			return emailActionErrMsg{err: err, action: "Toggle flag"}
+		}
+		label := "Flagged"
+		if isFlagged {
+			label = "Unflagged"
 		}
 		return emailActionDoneMsg{action: label, emailID: emailID}
 	}
