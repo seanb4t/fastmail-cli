@@ -109,6 +109,30 @@ func TestUpdate_MailboxesLoaded(t *testing.T) {
 	assert.False(t, model.mailboxList.loading)
 }
 
+func TestUpdate_MailboxesLoaded_AutoSelectsInbox(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+
+	mailboxes := []fastmail.Mailbox{
+		{ID: "mb-sent", Name: "Sent", Role: fastmail.RoleSent},
+		{ID: "mb-inbox", Name: "Inbox", Role: fastmail.RoleInbox},
+	}
+
+	updated, cmd := m.Update(mailboxesLoadedMsg{mailboxes: mailboxes})
+	model := updated.(Model)
+
+	// The batched command should include a mailboxSelectedMsg for Inbox
+	require.NotNil(t, cmd)
+
+	// Process the batched commands to trigger inbox selection
+	model, _ = applyUpdate(model, cmd())
+	assert.Equal(t, viewEmailList, model.view)
+	require.NotNil(t, model.emailList)
+	assert.Equal(t, "Inbox", model.emailList.list.Title)
+}
+
 func TestUpdate_MailboxSelected(t *testing.T) {
 	m := New(nil)
 	m.connecting = false

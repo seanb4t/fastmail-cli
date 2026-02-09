@@ -197,6 +197,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case mailboxesLoadedMsg:
 		m.statsBar.updateFromMailboxes(msg.mailboxes)
+		if model, cmd, handled := m.autoSelectInbox(msg); handled {
+			return model, cmd
+		}
 		// Continue to updateView to also update the mailbox list
 
 	case mailboxSelectedMsg:
@@ -778,6 +781,21 @@ func (m Model) handleActionErr(msg emailActionErrMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+func (m Model) autoSelectInbox(msg mailboxesLoadedMsg) (tea.Model, tea.Cmd, bool) { //nolint:unparam // bool kept for handled pattern consistency
+	if m.emailList != nil {
+		return m, nil, false
+	}
+	for i := range msg.mailboxes {
+		if msg.mailboxes[i].IsInbox() {
+			model, cmd := m.updateView(msg)
+			inbox := msg.mailboxes[i]
+			selectCmd := func() tea.Msg { return mailboxSelectedMsg{mailbox: inbox} }
+			return model, tea.Batch(cmd, selectCmd), true
+		}
+	}
+	return m, nil, false
 }
 
 func (m Model) handleAttachmentDownloaded(msg attachmentDownloadedMsg) (tea.Model, tea.Cmd) {
