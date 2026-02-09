@@ -133,6 +133,44 @@ func TestUpdate_MailboxesLoaded_AutoSelectsInbox(t *testing.T) {
 	assert.Equal(t, "Inbox", model.emailList.list.Title)
 }
 
+func TestUpdate_MailboxesLoaded_NoInbox_NoAutoSelect(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+
+	mailboxes := []fastmail.Mailbox{
+		{ID: "mb-sent", Name: "Sent", Role: fastmail.RoleSent},
+		{ID: "mb-drafts", Name: "Drafts", Role: fastmail.RoleDrafts},
+	}
+
+	updated, _ := m.Update(mailboxesLoadedMsg{mailboxes: mailboxes})
+	model := updated.(Model)
+
+	assert.Nil(t, model.emailList)
+	assert.Equal(t, viewMailboxList, model.view)
+}
+
+func TestUpdate_MailboxesLoaded_ExistingEmailList_NoAutoSelect(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+	el := newEmailListModel(fastmail.Mailbox{Name: "Sent", ID: "mb-sent"})
+	m.emailList = &el
+	m.view = viewEmailList
+
+	mailboxes := []fastmail.Mailbox{
+		{ID: "mb-inbox", Name: "Inbox", Role: fastmail.RoleInbox},
+	}
+
+	updated, _ := m.Update(mailboxesLoadedMsg{mailboxes: mailboxes})
+	model := updated.(Model)
+
+	// Should keep the existing email list, not replace with Inbox
+	assert.Equal(t, "Sent", model.emailList.list.Title)
+}
+
 func TestUpdate_MailboxSelected(t *testing.T) {
 	m := New(nil)
 	m.connecting = false

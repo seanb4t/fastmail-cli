@@ -48,6 +48,73 @@ func TestBDD_Polish_HelpIsOverlay(t *testing.T) {
 	assert.Contains(t, v, "help")
 }
 
+// BDD: As a user, when I launch the TUI, I land in the Inbox automatically.
+func TestBDD_Polish_AutoSelectInbox(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+
+	mailboxes := []fastmail.Mailbox{
+		{ID: "mb-drafts", Name: "Drafts", Role: fastmail.RoleDrafts},
+		{ID: "mb-inbox", Name: "Inbox", Role: fastmail.RoleInbox, UnreadEmails: 3},
+		{ID: "mb-sent", Name: "Sent", Role: fastmail.RoleSent},
+	}
+
+	// When: mailboxes finish loading
+	var cmd tea.Cmd
+	m, cmd = applyUpdate(m, mailboxesLoadedMsg{mailboxes: mailboxes})
+	// Then: a command to select inbox is batched
+	assert.NotNil(t, cmd)
+	// When: the batched command fires
+	m, _ = applyUpdate(m, cmd())
+
+	// Then: I see the email list for Inbox
+	assert.Equal(t, viewEmailList, m.view)
+	assert.NotNil(t, m.emailList)
+	assert.Equal(t, "Inbox", m.emailList.list.Title)
+}
+
+// BDD: As a user, when I select a mailbox, the email list fits within the dashboard pane.
+func TestBDD_Polish_MailboxSelectionFitsDashboard(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+
+	// When: I select a mailbox
+	mb := fastmail.Mailbox{ID: "mb1", Name: "Inbox"}
+	m, _ = applyUpdate(m, mailboxSelectedMsg{mailbox: mb})
+
+	// Then: the email list width matches the layout-constrained main pane
+	layout := m.panes.computeLayout(120, 40)
+	assert.Equal(t, layout.mainWidth-2, m.emailList.list.Width())
+
+	// And: the rendered dashboard does not exceed terminal height
+	v := m.View()
+	lines := len(splitLines(v))
+	assert.LessOrEqual(t, lines, 40, "dashboard should not exceed terminal height")
+}
+
+// splitLines splits a string into lines, matching terminal row count.
+func splitLines(s string) []string {
+	if s == "" {
+		return nil
+	}
+	lines := []string{}
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
+}
+
 // BDD: As a user, emails with attachments show an indicator.
 func TestBDD_Polish_AttachmentIndicator(t *testing.T) {
 	theme := DarkTheme()
