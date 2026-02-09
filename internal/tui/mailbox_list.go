@@ -73,7 +73,7 @@ func (m mailboxListModel) update(msg tea.Msg) (mailboxListModel, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
-		if msg.String() == "enter" {
+		if msg.String() == keyEnter {
 			if item, ok := m.list.SelectedItem().(mailboxItem); ok {
 				m.selected = &item.mailbox
 			}

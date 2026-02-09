@@ -17,6 +17,7 @@ const (
 	viewMailboxList view = iota
 	viewEmailList
 	viewEmailReader
+	viewMovePicker
 )
 
 // errMsg wraps errors from async commands.
@@ -27,16 +28,18 @@ type connectedMsg struct{}
 
 // Model is the top-level bubbletea model.
 type Model struct {
-	client      *fastmail.Client
-	view        view
-	mailboxList mailboxListModel
-	emailList   *emailListModel
-	emailReader *emailReaderModel
-	width       int
-	height      int
-	err         error
-	quit        bool
-	connecting  bool
+	client       *fastmail.Client
+	view         view
+	mailboxList  mailboxListModel
+	emailList    *emailListModel
+	emailReader  *emailReaderModel
+	movePicker   *movePickerModel
+	actionSource view // which view initiated the current action
+	width        int
+	height       int
+	err          error
+	quit         bool
+	connecting   bool
 }
 
 // New creates a new TUI model with the given client.
@@ -106,6 +109,8 @@ func (m Model) isFiltering() bool {
 		return m.emailList != nil && m.emailList.list.SettingFilter()
 	case viewEmailReader:
 		return false
+	case viewMovePicker:
+		return m.movePicker != nil && m.movePicker.list.SettingFilter()
 	}
 	return false
 }
@@ -119,8 +124,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quit = true
 			return m, tea.Quit
 		case "q":
-			// In the reader view, q means "go back" — let the reader handle it
-			if m.view != viewEmailReader && !m.isFiltering() {
+			// In reader/move picker views, q means "go back" — let the view handle it
+			if m.view != viewEmailReader && m.view != viewMovePicker && !m.isFiltering() {
 				m.quit = true
 				return m, tea.Quit
 			}
@@ -135,6 +140,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.emailReader != nil {
 			m.emailReader.setSize(msg.Width, msg.Height)
+		}
+		if m.movePicker != nil {
+			m.movePicker.setSize(msg.Width, msg.Height)
 		}
 
 	case emailBodyLoadedMsg:
@@ -156,6 +164,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.view = viewEmailList
 		return m, m.fetchEmailsCmd(msg.mailbox.ID)
 
+	case emailActionDoneMsg:
+		return m.handleActionDone(msg)
+
+	case emailActionErrMsg:
+		return m.handleActionErr(msg)
+
+	case mailboxesForMoveMsg:
+		mp := newMovePickerModel(msg.emailID, msg.mailboxes)
+		mp.setSize(m.width, m.height)
+		m.movePicker = &mp
+		m.view = viewMovePicker
+		return m, nil
+
 	case errMsg:
 		m.err = msg.err
 		m.connecting = false
@@ -174,6 +195,8 @@ func (m Model) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateEmailList(msg)
 	case viewEmailReader:
 		return m.updateEmailReader(msg)
+	case viewMovePicker:
+		return m.updateMovePicker(msg)
 	}
 	return m, nil
 }
@@ -219,6 +242,13 @@ func (m Model) updateEmailList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fetchEmailBodyCmd(email.ID)
 	}
 
+	if el.action != nil {
+		act := *el.action
+		el.action = nil
+		m.emailList = &el
+		return m.dispatchAction(act, viewEmailList)
+	}
+
 	return m, cmd
 }
 
@@ -236,6 +266,13 @@ func (m Model) updateEmailReader(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.emailReader = nil
 		m.view = viewEmailList
 		return m, nil
+	}
+
+	if er.action != nil {
+		act := *er.action
+		er.action = nil
+		m.emailReader = &er
+		return m.dispatchAction(act, viewEmailReader)
 	}
 
 	return m, cmd
@@ -266,9 +303,176 @@ func (m Model) View() string {
 		if m.emailReader != nil {
 			return m.emailReader.view()
 		}
+	case viewMovePicker:
+		if m.movePicker != nil {
+			return m.movePicker.view()
+		}
 	}
 
 	return ""
+}
+
+// dispatchAction fires the appropriate tea.Cmd for an email action.
+func (m Model) dispatchAction(act emailAction, source view) (tea.Model, tea.Cmd) {
+	m.actionSource = source
+	switch act.kind {
+	case "archive":
+		return m, archiveEmailCmd(m.client, act.email.ID)
+	case "delete":
+		return m, deleteEmailCmd(m.client, act.email.ID)
+	case "toggleRead":
+		return m, toggleReadCmd(m.client, act.email.ID, act.email.IsRead())
+	case "move":
+		return m, m.fetchMailboxesForMoveCmd(act.email.ID)
+	}
+	return m, nil
+}
+
+// mailboxesForMoveMsg carries mailbox data and email ID for the move picker.
+type mailboxesForMoveMsg struct {
+	mailboxes []fastmail.Mailbox
+	emailID   string
+}
+
+func (m Model) fetchMailboxesForMoveCmd(emailID string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		mailboxes, err := client.Mailbox().List(context.Background())
+		if err != nil {
+			return emailActionErrMsg{err: err, action: "Move"}
+		}
+		return mailboxesForMoveMsg{mailboxes: mailboxes, emailID: emailID}
+	}
+}
+
+// handleActionDone processes a successful email action.
+func (m Model) handleActionDone(msg emailActionDoneMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	// Remove/update item in the email list
+	if m.emailList != nil {
+		switch msg.action {
+		case "Archived", "Deleted", "Moved":
+			m.removeEmailFromList(msg.emailID)
+		default:
+			m.updateEmailInList(msg.emailID, msg.action)
+		}
+	}
+
+	// If action was from reader and removed the email, go back to list
+	if m.actionSource == viewEmailReader {
+		switch msg.action {
+		case "Archived", "Deleted", "Moved":
+			m.emailReader = nil
+			m.view = viewEmailList
+		}
+	}
+
+	// Show status on the active view
+	switch m.view {
+	case viewEmailList:
+		if m.emailList != nil {
+			cmd = m.emailList.status.setStatus(msg.action, false)
+		}
+	case viewEmailReader:
+		if m.emailReader != nil {
+			cmd = m.emailReader.status.setStatus(msg.action, false)
+		}
+	case viewMailboxList, viewMovePicker:
+		// No status to show on these views
+	}
+
+	return m, cmd
+}
+
+// handleActionErr processes a failed email action.
+func (m Model) handleActionErr(msg emailActionErrMsg) (tea.Model, tea.Cmd) {
+	errText := fmt.Sprintf("%s failed: %v", msg.action, msg.err)
+	var cmd tea.Cmd
+
+	switch m.actionSource {
+	case viewEmailList:
+		if m.emailList != nil {
+			cmd = m.emailList.status.setStatus(errText, true)
+		}
+	case viewEmailReader:
+		if m.emailReader != nil {
+			cmd = m.emailReader.status.setStatus(errText, true)
+		}
+	case viewMailboxList, viewMovePicker:
+		// Actions are not initiated from these views
+	}
+
+	return m, cmd
+}
+
+// removeEmailFromList removes an email item from the email list by ID.
+func (m Model) removeEmailFromList(emailID string) {
+	if m.emailList == nil {
+		return
+	}
+	items := m.emailList.list.Items()
+	for i, item := range items {
+		if ei, ok := item.(emailItem); ok && ei.email.ID == emailID {
+			m.emailList.list.RemoveItem(i)
+			return
+		}
+	}
+}
+
+// updateEmailInList updates the keywords on an email item in the list.
+func (m Model) updateEmailInList(emailID, action string) {
+	if m.emailList == nil {
+		return
+	}
+	items := m.emailList.list.Items()
+	for i, item := range items {
+		if ei, ok := item.(emailItem); ok && ei.email.ID == emailID {
+			switch action {
+			case "Marked read":
+				if !ei.email.IsRead() {
+					ei.email.Keywords = append(ei.email.Keywords, fastmail.KeywordSeen)
+				}
+			case "Marked unread":
+				keywords := make([]string, 0, len(ei.email.Keywords))
+				for _, kw := range ei.email.Keywords {
+					if kw != fastmail.KeywordSeen {
+						keywords = append(keywords, kw)
+					}
+				}
+				ei.email.Keywords = keywords
+			}
+			m.emailList.list.SetItem(i, ei)
+			return
+		}
+	}
+}
+
+func (m Model) updateMovePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.movePicker == nil {
+		return m, nil
+	}
+
+	mp := *m.movePicker
+	var cmd tea.Cmd
+	mp, cmd = mp.update(msg)
+	m.movePicker = &mp
+
+	if mp.canceled {
+		m.movePicker = nil
+		m.view = m.actionSource
+		return m, nil
+	}
+
+	if mp.selected != nil {
+		mailbox := *mp.selected
+		emailID := mp.emailID
+		m.movePicker = nil
+		m.view = m.actionSource
+		return m, moveEmailCmd(m.client, emailID, mailbox.ID)
+	}
+
+	return m, cmd
 }
 
 // Run starts the TUI program.

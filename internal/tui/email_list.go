@@ -11,7 +11,11 @@ import (
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
 
-const emailPageSize = 50
+const (
+	emailPageSize = 50
+	keyEsc        = "esc"
+	keyEnter      = "enter"
+)
 
 // emailItem implements list.DefaultItem for the bubbles list component.
 type emailItem struct {
@@ -46,11 +50,14 @@ func (i emailItem) FilterValue() string {
 
 // emailListModel manages the email list view for a selected mailbox.
 type emailListModel struct {
-	list     list.Model
-	mailbox  fastmail.Mailbox
-	loading  bool
-	selected *fastmail.Email
-	goBack   bool
+	list          list.Model
+	mailbox       fastmail.Mailbox
+	loading       bool
+	selected      *fastmail.Email
+	goBack        bool
+	status        statusModel
+	pendingDelete bool
+	action        *emailAction
 }
 
 func newEmailListModel(mailbox fastmail.Mailbox) emailListModel {
@@ -87,16 +94,14 @@ func (m emailListModel) update(msg tea.Msg) (emailListModel, tea.Cmd) {
 		cmd := m.list.SetItems(items)
 		return m, cmd
 
+	case statusClearMsg:
+		m.status.update(msg)
+		return m, nil
+
 	case tea.KeyMsg:
 		if !m.list.SettingFilter() {
-			switch msg.String() {
-			case "esc":
-				m.goBack = true
-				return m, nil
-			case "enter":
-				if item, ok := m.list.SelectedItem().(emailItem); ok {
-					m.selected = &item.email
-				}
+			if handled, cmd := m.handleKey(msg.String()); handled {
+				return m, cmd
 			}
 		}
 	}
@@ -106,11 +111,67 @@ func (m emailListModel) update(msg tea.Msg) (emailListModel, tea.Cmd) {
 	return m, cmd
 }
 
+// handleKey processes keybindings for navigation and actions.
+// Returns true if the key was handled.
+func (m *emailListModel) handleKey(key string) (bool, tea.Cmd) {
+	// Cancel pending delete on any key that isn't "x"
+	if m.pendingDelete && key != "x" {
+		m.pendingDelete = false
+		cmd := m.status.setStatus("", false)
+		m.status.visible = false
+		return true, cmd
+	}
+
+	switch key {
+	case keyEsc:
+		m.goBack = true
+		return true, nil
+	case keyEnter:
+		if item, ok := m.list.SelectedItem().(emailItem); ok {
+			m.selected = &item.email
+		}
+		return true, nil
+	case "a", "r", "m":
+		return m.handleActionKey(key)
+	case "x":
+		return m.handleDeleteKey()
+	}
+	return false, nil
+}
+
+func (m *emailListModel) handleActionKey(key string) (bool, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(emailItem)
+	if !ok {
+		return true, nil
+	}
+	kindMap := map[string]string{"a": "archive", "r": "toggleRead", "m": "move"}
+	m.action = &emailAction{kind: kindMap[key], email: item.email}
+	return true, nil
+}
+
+func (m *emailListModel) handleDeleteKey() (bool, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(emailItem)
+	if !ok {
+		return true, nil
+	}
+	if m.pendingDelete {
+		m.pendingDelete = false
+		m.action = &emailAction{kind: "delete", email: item.email}
+		return true, nil
+	}
+	m.pendingDelete = true
+	return true, m.status.setStatus("Press x again to delete", false)
+}
+
 func (m emailListModel) view() string {
 	if m.loading {
 		return fmt.Sprintf("\n  Loading emails from %s...", m.mailbox.Name)
 	}
-	return m.list.View()
+	v := m.list.View()
+	if s := m.status.view(); s != "" {
+		v += "\n" + s
+	}
+	return v
 }
 
 // emailsLoadedMsg is sent when emails are fetched for a mailbox.

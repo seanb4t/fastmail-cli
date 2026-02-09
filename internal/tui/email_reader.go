@@ -26,13 +26,16 @@ type emailBodyLoadedMsg struct {
 
 // emailReaderModel displays a single email with scrollable body.
 type emailReaderModel struct {
-	viewport viewport.Model
-	email    fastmail.Email
-	loading  bool
-	goBack   bool
-	ready    bool
-	width    int
-	height   int
+	viewport      viewport.Model
+	email         fastmail.Email
+	loading       bool
+	goBack        bool
+	ready         bool
+	width         int
+	height        int
+	status        statusModel
+	pendingDelete bool
+	action        *emailAction
 }
 
 func newEmailReaderModel(email fastmail.Email) emailReaderModel {
@@ -69,9 +72,23 @@ func (m emailReaderModel) update(msg tea.Msg) (emailReaderModel, tea.Cmd) {
 		m.ready = true
 		return m, nil
 
+	case statusClearMsg:
+		m.status.update(msg)
+		return m, nil
+
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "esc":
+		key := msg.String()
+
+		// Cancel pending delete on any key that isn't "x"
+		if m.pendingDelete && key != "x" {
+			m.pendingDelete = false
+			cmd := m.status.setStatus("", false)
+			m.status.visible = false
+			return m, cmd
+		}
+
+		switch key {
+		case "q", keyEsc:
 			m.goBack = true
 			return m, nil
 		case "d":
@@ -85,6 +102,23 @@ func (m emailReaderModel) update(msg tea.Msg) (emailReaderModel, tea.Cmd) {
 			return m, nil
 		case "G":
 			m.viewport.GotoBottom()
+			return m, nil
+		case "a":
+			m.action = &emailAction{kind: "archive", email: m.email}
+			return m, nil
+		case "x":
+			if m.pendingDelete {
+				m.pendingDelete = false
+				m.action = &emailAction{kind: "delete", email: m.email}
+				return m, nil
+			}
+			m.pendingDelete = true
+			return m, m.status.setStatus("Press x again to delete", false)
+		case "r":
+			m.action = &emailAction{kind: "toggleRead", email: m.email}
+			return m, nil
+		case "m":
+			m.action = &emailAction{kind: "move", email: m.email}
 			return m, nil
 		}
 	}
@@ -104,9 +138,15 @@ func (m emailReaderModel) view() string {
 	}
 
 	header := m.renderHeaders()
-	help := readerHelpStyle.Render("  j/k scroll • d/u half-page • g/G top/bottom • q back")
 
-	return header + "\n" + m.viewport.View() + "\n" + help
+	var bottom string
+	if s := m.status.view(); s != "" {
+		bottom = s
+	} else {
+		bottom = readerHelpStyle.Render("  j/k scroll • d/u half-page • g/G top/bottom • a archive • x delete • r read • m move • q back")
+	}
+
+	return header + "\n" + m.viewport.View() + "\n" + bottom
 }
 
 func (m emailReaderModel) renderHeaders() string {
