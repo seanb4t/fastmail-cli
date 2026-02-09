@@ -15,6 +15,7 @@ type view int
 
 const (
 	viewMailboxList view = iota
+	viewEmailList
 )
 
 // errMsg wraps errors from async commands.
@@ -28,6 +29,7 @@ type Model struct {
 	client      *fastmail.Client
 	view        view
 	mailboxList mailboxListModel
+	emailList   *emailListModel
 	width       int
 	height      int
 	err         error
@@ -71,12 +73,33 @@ func (m Model) fetchMailboxesCmd() tea.Cmd {
 	}
 }
 
+func (m Model) fetchEmailsCmd(mailboxID string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		emails, err := client.Mail().List(context.Background(), mailboxID, emailPageSize)
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return emailsLoadedMsg{emails: emails}
+	}
+}
+
+// isFiltering returns true if any active list is in filter mode.
+func (m Model) isFiltering() bool {
+	switch m.view {
+	case viewMailboxList:
+		return m.mailboxList.list.SettingFilter()
+	case viewEmailList:
+		return m.emailList != nil && m.emailList.list.SettingFilter()
+	}
+	return false
+}
+
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Global quit — but only when the list isn't filtering
-		if !m.mailboxList.list.SettingFilter() {
+		if !m.isFiltering() {
 			switch msg.String() {
 			case "q", "ctrl+c":
 				m.quit = true
@@ -91,10 +114,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.mailboxList.setSize(msg.Width, msg.Height)
+		if m.emailList != nil {
+			m.emailList.setSize(msg.Width, msg.Height)
+		}
 
 	case connectedMsg:
 		m.connecting = false
 		return m, m.fetchMailboxesCmd()
+
+	case mailboxSelectedMsg:
+		el := newEmailListModel(msg.mailbox)
+		el.setSize(m.width, m.height)
+		m.emailList = &el
+		m.view = viewEmailList
+		return m, m.fetchEmailsCmd(msg.mailbox.ID)
 
 	case errMsg:
 		m.err = msg.err
@@ -103,10 +136,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Delegate to current view
-	if m.view == viewMailboxList {
+	switch m.view {
+	case viewMailboxList:
 		var cmd tea.Cmd
 		m.mailboxList, cmd = m.mailboxList.update(msg)
+
+		// Check if a mailbox was selected
+		if m.mailboxList.selected != nil {
+			mb := *m.mailboxList.selected
+			m.mailboxList.selected = nil
+			return m, func() tea.Msg { return mailboxSelectedMsg{mailbox: mb} }
+		}
+
 		return m, cmd
+
+	case viewEmailList:
+		if m.emailList != nil {
+			var cmd tea.Cmd
+			el := *m.emailList
+			el, cmd = el.update(msg)
+			m.emailList = &el
+
+			// Check if user wants to go back
+			if el.goBack {
+				m.emailList = nil
+				m.view = viewMailboxList
+				return m, nil
+			}
+
+			return m, cmd
+		}
 	}
 
 	return m, nil
@@ -126,8 +185,13 @@ func (m Model) View() string {
 		return "\n  Connecting to Fastmail..."
 	}
 
-	if m.view == viewMailboxList {
+	switch m.view {
+	case viewMailboxList:
 		return m.mailboxList.view()
+	case viewEmailList:
+		if m.emailList != nil {
+			return m.emailList.view()
+		}
 	}
 
 	return ""
