@@ -15,11 +15,20 @@ func TestNew(t *testing.T) {
 
 	assert.Equal(t, viewMailboxList, m.view)
 	assert.NotNil(t, m.client)
+	assert.True(t, m.connecting)
 	assert.False(t, m.quit)
+}
+
+func TestInit_ReturnsConnectCmd(t *testing.T) {
+	m := New(nil)
+	cmd := m.Init()
+
+	assert.NotNil(t, cmd)
 }
 
 func TestUpdate_Quit(t *testing.T) {
 	m := New(nil)
+	m.connecting = false
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	model := updated.(Model)
@@ -48,12 +57,49 @@ func TestUpdate_WindowSize(t *testing.T) {
 	assert.Equal(t, 40, model.height)
 }
 
-func TestView_Default(t *testing.T) {
+func TestUpdate_Connected(t *testing.T) {
 	m := New(nil)
-	v := m.View()
+	m.connecting = true
 
-	assert.Contains(t, v, "fastmail-cli")
-	assert.Contains(t, v, "q: quit")
+	updated, cmd := m.Update(connectedMsg{})
+	model := updated.(Model)
+
+	assert.False(t, model.connecting)
+	assert.NotNil(t, cmd) // should return fetchMailboxesCmd
+}
+
+func TestUpdate_Error(t *testing.T) {
+	m := New(nil)
+	m.connecting = true
+
+	updated, cmd := m.Update(errMsg{err: assert.AnError})
+	model := updated.(Model)
+
+	assert.False(t, model.connecting)
+	assert.Equal(t, assert.AnError, model.err)
+	assert.Nil(t, cmd)
+}
+
+func TestUpdate_MailboxesLoaded(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+
+	mailboxes := []fastmail.Mailbox{
+		{ID: "1", Name: "Inbox", Role: fastmail.RoleInbox, TotalEmails: 42, UnreadEmails: 3},
+		{ID: "2", Name: "Sent", Role: fastmail.RoleSent, TotalEmails: 10},
+	}
+
+	updated, _ := m.Update(mailboxesLoadedMsg{mailboxes: mailboxes})
+	model := updated.(Model)
+
+	assert.False(t, model.mailboxList.loading)
+}
+
+func TestView_Connecting(t *testing.T) {
+	m := New(nil)
+	m.connecting = true
+
+	assert.Contains(t, m.View(), "Connecting")
 }
 
 func TestView_Quit(t *testing.T) {
@@ -67,13 +113,15 @@ func TestView_Error(t *testing.T) {
 	m := New(nil)
 	m.err = assert.AnError
 
-	v := m.View()
-	assert.Contains(t, v, "Error:")
+	assert.Contains(t, m.View(), "Error:")
 }
 
-func TestInit(t *testing.T) {
+func TestView_MailboxList(t *testing.T) {
 	m := New(nil)
-	cmd := m.Init()
+	m.connecting = false
+	m.mailboxList.loading = false
+	m.mailboxList.setSize(80, 24)
 
-	assert.Nil(t, cmd)
+	v := m.View()
+	assert.Contains(t, v, "Mailboxes")
 }
