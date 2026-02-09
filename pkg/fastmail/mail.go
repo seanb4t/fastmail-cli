@@ -126,6 +126,55 @@ func (s *MailService) Get(ctx context.Context, id string) (*Email, error) {
 	return &emails[0], nil
 }
 
+// GetWithBody returns a single email with full body content and address headers.
+func (s *MailService) GetWithBody(ctx context.Context, id string) (*Email, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	getBuilder := jmap.NewEmailGet(accountID).
+		IDs(id).
+		Properties(
+			"id", "threadId", "subject", "preview", "receivedAt", "size",
+			"keywords", "mailboxIds", "attachments",
+			"from", "to", "cc", "bcc",
+			"bodyValues", "textBody", "htmlBody",
+		)
+
+	args := getBuilder.Build()
+	args["fetchTextBodyValues"] = true
+	args["fetchHTMLBodyValues"] = true
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	callID := req.Invoke("Email/get", args)
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	result, err := resp.GetResult(callID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting result")
+	}
+	if result.IsError() {
+		return nil, oops.Errorf("get failed: %s", result.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := result.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding response")
+	}
+
+	if len(getResp.NotFound) > 0 || len(getResp.List) == 0 {
+		return nil, oops.Errorf("email not found: %s", id)
+	}
+
+	emails := convertEmailsWithBody(getResp.List)
+	return &emails[0], nil
+}
+
 // SearchResult pairs an email with its search snippet highlights.
 type SearchResult struct {
 	Email          Email
@@ -798,6 +847,35 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 			Keywords:    keywords,
 			MailboxIDs:  mailboxIDs,
 			Attachments: attachments,
+		}
+	}
+	return emails
+}
+
+// convertEmailsWithBody converts JMAP emails to domain emails including body and address fields.
+func convertEmailsWithBody(jmapEmails []jmap.Email) []Email {
+	emails := convertEmails(jmapEmails)
+	for i, je := range jmapEmails {
+		if len(je.From) > 0 {
+			addrs := convertJMAPToEmailAddresses(je.From)
+			emails[i].From = addrs[0]
+		}
+		emails[i].To = convertJMAPToEmailAddresses(je.To)
+		emails[i].Cc = convertJMAPToEmailAddresses(je.Cc)
+		emails[i].Bcc = convertJMAPToEmailAddresses(je.Bcc)
+
+		// Extract body text — prefer plain text, fall back to HTML
+		if len(je.TextBody) > 0 {
+			partID := je.TextBody[0].PartID
+			if bv, ok := je.BodyValues[partID]; ok {
+				emails[i].Body = bv.Value
+			}
+		}
+		if emails[i].Body == "" && len(je.HTMLBody) > 0 {
+			partID := je.HTMLBody[0].PartID
+			if bv, ok := je.BodyValues[partID]; ok {
+				emails[i].Body = bv.Value
+			}
 		}
 	}
 	return emails
