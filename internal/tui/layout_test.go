@@ -135,3 +135,10 @@ func TestPaneManager_ComputeLayout_VerySmall(t *testing.T) {
 	assert.GreaterOrEqual(t, layout.listHeight, 0)
 	assert.GreaterOrEqual(t, layout.previewHeight, 0)
 }
+
+func TestTruncateLines(t *testing.T) {
+	assert.Equal(t, "a\nb\nc", truncateLines("a\nb\nc\nd\ne", 3))
+	assert.Equal(t, "a\nb", truncateLines("a\nb", 5))
+	assert.Equal(t, "", truncateLines("", 3))
+	assert.Equal(t, "a", truncateLines("a\nb\nc", 1))
+}

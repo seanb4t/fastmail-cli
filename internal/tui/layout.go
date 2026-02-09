@@ -1,5 +1,7 @@
 package tui
 
+import "strings"
+
 const (
 	sidebarDefaultWidth = 20
 	statsBarHeight      = 1
@@ -73,6 +75,14 @@ func (pm *paneManager) toggleSidebar() {
 func (pm *paneManager) adjustSplit(delta int) {
 	pm.splitPct += delta
 	pm.splitPct = max(splitMin, min(splitMax, pm.splitPct))
+}
+
+func truncateLines(s string, maxLines int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= maxLines {
+		return s
+	}
+	return strings.Join(lines[:maxLines], "\n")
 }
 
 func (pm *paneManager) computeLayout(width, height int) paneLayout {

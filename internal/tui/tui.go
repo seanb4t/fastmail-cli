@@ -654,6 +654,10 @@ func (m Model) viewDashboard() string {
 	}
 
 	paneHeight := layout.listHeight + layout.previewHeight
+	// Truncate content to prevent overflow past pane border
+	sidebarContent = truncateLines(sidebarContent, paneHeight)
+	mainContent = truncateLines(mainContent, paneHeight)
+
 	sidebarStyle := lipgloss.NewStyle().
 		Width(layout.sidebarWidth - 2). // account for border
 		Height(paneHeight).
