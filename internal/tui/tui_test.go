@@ -492,3 +492,45 @@ func TestUpdate_Minus_AdjustsSplit(t *testing.T) {
 
 	assert.Equal(t, 40, model.panes.splitPct)
 }
+
+func TestUpdate_EmailSelected_OpensPreview(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+	m.view = viewEmailList
+	el := newEmailListModel(fastmail.Mailbox{Name: "Inbox", ID: "mb1"})
+	el.loading = false
+	m.emailList = &el
+
+	email := fastmail.Email{ID: "e1", Subject: "Test"}
+	el.selected = &email
+	m.emailList = &el
+
+	// When email is selected, preview pane should be populated
+	result, cmd := m.updateEmailList(tea.Msg(nil))
+	model := result.(Model)
+
+	// Preview should be initialized
+	require.NotNil(t, model.emailReader)
+	// Should still be in the dashboard layout (not fullscreen reader)
+	assert.Equal(t, viewEmailList, model.view)
+	// Should fetch the body
+	assert.NotNil(t, cmd)
+}
+
+func TestUpdate_Enter_InPreview_OpensFullscreen(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailList
+	m.panes.focus = PanePreview
+	email := fastmail.Email{ID: "e1", Subject: "Test"}
+	er := newEmailReaderModel(email)
+	er.setSize(80, 20)
+	m.emailReader = &er
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(Model)
+
+	assert.Equal(t, viewEmailReader, model.view)
+}

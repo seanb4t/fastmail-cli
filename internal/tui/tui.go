@@ -316,6 +316,13 @@ func (m Model) handleLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) { //n
 	case "tab":
 		m.panes.cycleFocus()
 		return m, nil, true
+	case "enter":
+		if m.panes.focus == PanePreview && m.emailReader != nil {
+			m.view = viewEmailReader
+			m.emailReader.isPreview = false
+			m.emailReader.setSize(m.width, m.height)
+			return m, nil, true
+		}
 	case "b":
 		if !m.isFullscreenView() {
 			m.panes.toggleSidebar()
@@ -389,10 +396,12 @@ func (m Model) updateEmailList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		el.selected = nil
 		m.emailList = &el
 
+		layout := m.panes.computeLayout(m.width, m.height)
 		er := newEmailReaderModel(email)
-		er.setSize(m.width, m.height)
+		er.isPreview = true
+		er.setSize(layout.mainWidth, layout.previewHeight)
 		m.emailReader = &er
-		m.view = viewEmailReader
+		// Stay in dashboard view — don't switch to viewEmailReader
 		return m, m.fetchEmailBodyCmd(email.ID)
 	}
 
@@ -618,7 +627,13 @@ func (m Model) viewDashboard() string {
 	sidebarContent := m.mailboxList.view()
 	var mainContent string
 	if m.emailList != nil {
-		mainContent = m.emailList.view()
+		if m.emailReader != nil {
+			// Split: email list on top, preview on bottom
+			sv := newSplitView(layout.mainWidth, layout.listHeight+layout.previewHeight, m.panes.splitPct)
+			mainContent = sv.render(m.emailList.view(), m.emailReader.view(), m.theme)
+		} else {
+			mainContent = m.emailList.view()
+		}
 	}
 
 	// Apply borders
@@ -630,7 +645,7 @@ func (m Model) viewDashboard() string {
 		sidebarBorder = focusBorderColor
 	}
 	mainBorder := borderColor
-	if m.panes.focus == PaneEmailList {
+	if m.panes.focus == PaneEmailList || m.panes.focus == PanePreview {
 		mainBorder = focusBorderColor
 	}
 

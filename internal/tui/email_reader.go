@@ -40,6 +40,7 @@ type emailReaderModel struct {
 	showAttachments bool
 	reply           bool
 	replyAll        bool
+	isPreview       bool
 }
 
 func newEmailReaderModel(email fastmail.Email) emailReaderModel {
@@ -163,10 +164,17 @@ func (m emailReaderModel) handleKey(msg tea.KeyMsg) (emailReaderModel, tea.Cmd) 
 
 func (m emailReaderModel) view() string {
 	if m.loading {
+		if m.isPreview {
+			return "Loading preview..."
+		}
 		return "\n  Loading email..."
 	}
 
 	header := m.renderHeaders()
+
+	if m.isPreview {
+		return header + "\n" + m.viewport.View()
+	}
 
 	var bottom string
 	if s := m.status.view(); s != "" {
