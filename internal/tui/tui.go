@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
@@ -44,6 +45,9 @@ type Model struct {
 	threadView       *threadViewModel
 	attachmentPicker *attachmentPickerModel
 	composeView      *composeModel
+	panes            paneManager
+	theme            Theme
+	keyBar           keyBarModel
 	actionSource     view // which view initiated the current action
 	width            int
 	height           int
@@ -55,11 +59,15 @@ type Model struct {
 
 // New creates a new TUI model with the given client.
 func New(client *fastmail.Client) Model {
+	theme := DetectTheme()
 	return Model{
 		client:      client,
 		view:        viewMailboxList,
 		mailboxList: newMailboxListModel(),
 		connecting:  true,
+		panes:       newPaneManager(),
+		theme:       theme,
+		keyBar:      newKeyBarModel(theme),
 	}
 }
 
@@ -237,12 +245,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) {
 	m.width = msg.Width
 	m.height = msg.Height
-	m.mailboxList.setSize(msg.Width, msg.Height)
+
+	layout := m.panes.computeLayout(msg.Width, msg.Height)
+
+	m.mailboxList.setSize(layout.sidebarWidth, layout.listHeight+layout.previewHeight)
 	if m.emailList != nil {
-		m.emailList.setSize(msg.Width, msg.Height)
+		m.emailList.setSize(layout.mainWidth, layout.listHeight)
 	}
 	if m.emailReader != nil {
-		m.emailReader.setSize(msg.Width, msg.Height)
+		m.emailReader.setSize(layout.mainWidth, layout.previewHeight)
 	}
 	if m.movePicker != nil {
 		m.movePicker.setSize(msg.Width, msg.Height)
@@ -270,16 +281,54 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.helpOverlay = false
 		return m, nil, true
 	}
+	if result, cmd, handled := m.handleLayoutKeys(msg); handled {
+		return result, cmd, true
+	}
 	switch msg.String() {
 	case "q":
 		// In reader/move picker/thread/attachment/compose views, q means "go back" or is a character — let the view handle it
-		if m.view != viewEmailReader && m.view != viewMovePicker && m.view != viewThreadView && m.view != viewAttachmentPicker && m.view != viewCompose && !m.isFiltering() {
+		if !m.isFullscreenView() && !m.isFiltering() {
 			m.quit = true
 			return m, tea.Quit, true
 		}
 	case "?":
 		if !m.isFiltering() && m.view != viewCompose {
 			m.helpOverlay = true
+			return m, nil, true
+		}
+	}
+	return m, nil, false
+}
+
+// isFullscreenView returns true for views that take over the whole screen.
+func (m Model) isFullscreenView() bool {
+	return m.view == viewEmailReader || m.view == viewMovePicker ||
+		m.view == viewThreadView || m.view == viewAttachmentPicker ||
+		m.view == viewCompose
+}
+
+// handleLayoutKeys processes pane layout keybindings (tab, b, +, -).
+func (m Model) handleLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) { //nolint:unparam // cmd kept for signature consistency with handleGlobalKeys
+	if m.isFiltering() {
+		return m, nil, false
+	}
+	switch msg.String() {
+	case "tab":
+		m.panes.cycleFocus()
+		return m, nil, true
+	case "b":
+		if !m.isFullscreenView() {
+			m.panes.toggleSidebar()
+			return m, nil, true
+		}
+	case "+":
+		if !m.isFullscreenView() {
+			m.panes.adjustSplit(10)
+			return m, nil, true
+		}
+	case "-":
+		if !m.isFullscreenView() {
+			m.panes.adjustSplit(-10)
 			return m, nil, true
 		}
 	}
@@ -525,20 +574,14 @@ func (m Model) View() string {
 		return "\n  Connecting to Fastmail..."
 	}
 
-	if m.helpOverlay {
-		content := helpForView(m.view)
-		return "\n  " + strings.ReplaceAll(content, "\n", "\n  ")
-	}
-
-	switch m.view {
-	case viewMailboxList:
-		return m.mailboxList.view()
-	case viewEmailList:
-		if m.emailList != nil {
-			return m.emailList.view()
-		}
+	// Fullscreen modal views
+	switch m.view { //nolint:exhaustive // mailbox/email list handled by dashboard below
 	case viewEmailReader:
 		if m.emailReader != nil {
+			if m.helpOverlay {
+				content := helpForView(m.view)
+				return "\n  " + strings.ReplaceAll(content, "\n", "\n  ")
+			}
 			return m.emailReader.view()
 		}
 	case viewMovePicker:
@@ -559,7 +602,64 @@ func (m Model) View() string {
 		}
 	}
 
-	return ""
+	if m.helpOverlay {
+		content := helpForView(m.view)
+		return "\n  " + strings.ReplaceAll(content, "\n", "\n  ")
+	}
+
+	// Dashboard layout
+	return m.viewDashboard()
+}
+
+func (m Model) viewDashboard() string {
+	layout := m.panes.computeLayout(m.width, m.height)
+
+	// Render panes
+	sidebarContent := m.mailboxList.view()
+	var mainContent string
+	if m.emailList != nil {
+		mainContent = m.emailList.view()
+	}
+
+	// Apply borders
+	borderColor := m.theme.PaneBorder
+	focusBorderColor := m.theme.FocusBorder
+
+	sidebarBorder := borderColor
+	if m.panes.focus == PaneMailbox {
+		sidebarBorder = focusBorderColor
+	}
+	mainBorder := borderColor
+	if m.panes.focus == PaneEmailList {
+		mainBorder = focusBorderColor
+	}
+
+	sidebarStyle := lipgloss.NewStyle().
+		Width(layout.sidebarWidth - 2). // account for border
+		Height(layout.listHeight + layout.previewHeight).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(sidebarBorder)
+
+	mainStyle := lipgloss.NewStyle().
+		Width(layout.mainWidth - 2). // account for border
+		Height(layout.listHeight + layout.previewHeight).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(mainBorder)
+
+	var panes string
+	if m.panes.sidebar && layout.sidebarWidth > 0 {
+		panes = lipgloss.JoinHorizontal(lipgloss.Top,
+			sidebarStyle.Render(sidebarContent),
+			mainStyle.Render(mainContent),
+		)
+	} else {
+		panes = mainStyle.Render(mainContent)
+	}
+
+	// Key bar
+	keyBarContent := m.keyBar.viewForPane(m.panes.focus)
+
+	return lipgloss.JoinVertical(lipgloss.Left, panes, keyBarContent)
 }
 
 // dispatchAction fires the appropriate tea.Cmd for an email action.

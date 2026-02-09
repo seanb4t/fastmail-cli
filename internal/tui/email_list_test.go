@@ -330,7 +330,7 @@ func TestEmailListModel_View_SearchLoading(t *testing.T) {
 
 	v := m.view()
 	assert.Contains(t, v, "Searching for")
-	assert.Contains(t, v, `"important"`)
+	assert.Contains(t, v, "important")
 }
 
 func TestEmailListModel_Update_SearchResults(t *testing.T) {

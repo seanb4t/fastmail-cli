@@ -87,7 +87,7 @@ func (m mailboxListModel) update(msg tea.Msg) (mailboxListModel, tea.Cmd) {
 
 func (m mailboxListModel) view() string {
 	if m.loading {
-		return "\n  Loading mailboxes..."
+		return "Loading mailboxes..."
 	}
 	return m.list.View()
 }

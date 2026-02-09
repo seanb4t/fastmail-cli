@@ -240,13 +240,13 @@ func (m *emailListModel) handleSearchInput(msg tea.KeyMsg) (emailListModel, tea.
 func (m emailListModel) view() string {
 	if m.loading {
 		if m.searchQuery != "" {
-			return fmt.Sprintf("\n  Searching for %q...", m.searchQuery)
+			return fmt.Sprintf("Searching for %q...", m.searchQuery)
 		}
-		return fmt.Sprintf("\n  Loading emails from %s...", m.mailbox.Name)
+		return fmt.Sprintf("Loading emails from %s...", m.mailbox.Name)
 	}
 	v := m.list.View()
 	if m.searchMode {
-		v += "\n  " + m.searchInput.View()
+		v += "\n" + m.searchInput.View()
 	} else if s := m.status.view(); s != "" {
 		v += "\n" + s
 	}

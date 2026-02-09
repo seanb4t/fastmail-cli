@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -427,4 +428,67 @@ func TestUpdate_EmailReader_FlagAction(t *testing.T) {
 	// The reader's action field is cleared after dispatch in updateEmailReader
 	// We can verify the action source was set correctly
 	assert.Equal(t, viewEmailReader, model.actionSource)
+}
+
+func TestNew_HasPaneManager(t *testing.T) {
+	m := New(nil)
+	assert.Equal(t, PaneEmailList, m.panes.focus)
+	assert.True(t, m.panes.sidebar)
+}
+
+func TestNew_HasTheme(t *testing.T) {
+	m := New(nil)
+	assert.NotEqual(t, lipgloss.Color(""), m.theme.FocusBorder)
+}
+
+func TestUpdate_Tab_CyclesFocus(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.panes.focus = PaneMailbox
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model := updated.(Model)
+
+	assert.Equal(t, PaneEmailList, model.panes.focus)
+}
+
+func TestUpdate_B_TogglesSidebar(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailList
+	el := newEmailListModel(fastmail.Mailbox{Name: "Inbox", ID: "mb1"})
+	m.emailList = &el
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	model := updated.(Model)
+
+	assert.False(t, model.panes.sidebar)
+}
+
+func TestUpdate_Plus_AdjustsSplit(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailList
+	el := newEmailListModel(fastmail.Mailbox{Name: "Inbox", ID: "mb1"})
+	m.emailList = &el
+	m.panes.splitPct = 50
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("+")})
+	model := updated.(Model)
+
+	assert.Equal(t, 60, model.panes.splitPct)
+}
+
+func TestUpdate_Minus_AdjustsSplit(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailList
+	el := newEmailListModel(fastmail.Mailbox{Name: "Inbox", ID: "mb1"})
+	m.emailList = &el
+	m.panes.splitPct = 50
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("-")})
+	model := updated.(Model)
+
+	assert.Equal(t, 40, model.panes.splitPct)
 }
