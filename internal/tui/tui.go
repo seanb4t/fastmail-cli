@@ -248,12 +248,12 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) {
 
 	layout := m.panes.computeLayout(msg.Width, msg.Height)
 
-	m.mailboxList.setSize(layout.sidebarWidth, layout.listHeight+layout.previewHeight)
+	m.mailboxList.setSize(layout.sidebarWidth-2, layout.listHeight+layout.previewHeight)
 	if m.emailList != nil {
-		m.emailList.setSize(layout.mainWidth, layout.listHeight)
+		m.emailList.setSize(layout.mainWidth-2, layout.listHeight)
 	}
 	if m.emailReader != nil {
-		m.emailReader.setSize(layout.mainWidth, layout.previewHeight)
+		m.emailReader.setSize(layout.mainWidth-2, layout.previewHeight)
 	}
 	if m.movePicker != nil {
 		m.movePicker.setSize(msg.Width, msg.Height)
@@ -399,7 +399,7 @@ func (m Model) updateEmailList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		layout := m.panes.computeLayout(m.width, m.height)
 		er := newEmailReaderModel(email)
 		er.isPreview = true
-		er.setSize(layout.mainWidth, layout.previewHeight)
+		er.setSize(layout.mainWidth-2, layout.previewHeight)
 		m.emailReader = &er
 		// Stay in dashboard view — don't switch to viewEmailReader
 		return m, m.fetchEmailBodyCmd(email.ID)

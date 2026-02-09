@@ -88,7 +88,7 @@ func (pm *paneManager) computeLayout(width, height int) paneLayout {
 	}
 	mainW = max(mainW, 0)
 
-	contentH := height - statsBarHeight - keyBarHeight
+	contentH := height - statsBarHeight - keyBarHeight - 2 // 2 for pane border (top+bottom)
 	contentH = max(contentH, 2)
 
 	listH := contentH * pm.splitPct / 100
