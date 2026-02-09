@@ -77,14 +77,16 @@ func (pm *paneManager) adjustSplit(delta int) {
 
 func (pm *paneManager) computeLayout(width, height int) paneLayout {
 	var sidebarW int
-	if pm.sidebar {
+	// Auto-collapse sidebar on narrow terminals (< 80 cols)
+	if pm.sidebar && width >= 80 {
 		sidebarW = sidebarDefaultWidth
 	}
 
 	mainW := width - sidebarW
-	if pm.sidebar && mainW > 0 {
+	if sidebarW > 0 && mainW > 0 {
 		mainW-- // 1 char border between sidebar and main
 	}
+	mainW = max(mainW, 0)
 
 	contentH := height - statsBarHeight - keyBarHeight
 	contentH = max(contentH, 2)

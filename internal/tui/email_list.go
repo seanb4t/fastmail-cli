@@ -312,6 +312,12 @@ func (i emailItem) richTitle(theme Theme, width int) string {
 		flagStr = "  "
 	}
 
+	// Attachment indicator
+	var attachStr string
+	if len(i.email.Attachments) > 0 {
+		attachStr = "📎 "
+	}
+
 	// From
 	from := i.email.From.Email
 	if i.email.From.Name != "" {
@@ -340,5 +346,5 @@ func (i emailItem) richTitle(theme Theme, width int) string {
 	subjectRendered := textStyle.Render(truncate(subject, width-50))
 	dateRendered := dateStyle.Render(age)
 
-	return flagStr + fromRendered + " " + subjectRendered + " " + dateRendered
+	return flagStr + attachStr + fromRendered + " " + subjectRendered + " " + dateRendered
 }

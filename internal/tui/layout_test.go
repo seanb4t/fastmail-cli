@@ -105,3 +105,33 @@ func TestPaneManager_ComputeLayout_NoSidebar(t *testing.T) {
 	assert.Equal(t, 0, layout.sidebarWidth)
 	assert.Equal(t, 120, layout.mainWidth)
 }
+
+func TestPaneManager_ComputeLayout_NarrowTerminal(t *testing.T) {
+	pm := newPaneManager()
+	pm.sidebar = true
+
+	layout := pm.computeLayout(60, 30)
+
+	// Below 80 cols, sidebar should auto-collapse
+	assert.Equal(t, 0, layout.sidebarWidth)
+	assert.Equal(t, 60, layout.mainWidth)
+}
+
+func TestPaneManager_ComputeLayout_ShortTerminal(t *testing.T) {
+	pm := newPaneManager()
+
+	layout := pm.computeLayout(120, 20)
+
+	// Short terminals should still have valid dimensions
+	assert.Greater(t, layout.listHeight, 0)
+}
+
+func TestPaneManager_ComputeLayout_VerySmall(t *testing.T) {
+	pm := newPaneManager()
+
+	layout := pm.computeLayout(40, 15)
+
+	// Should not panic, should produce valid layout
+	assert.GreaterOrEqual(t, layout.listHeight, 0)
+	assert.GreaterOrEqual(t, layout.previewHeight, 0)
+}

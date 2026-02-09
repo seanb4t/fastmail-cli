@@ -389,6 +389,18 @@ func TestEmailItem_RichTitle_Read(t *testing.T) {
 	assert.Contains(t, title, "Carol")
 }
 
+func TestEmailItem_RichTitle_WithAttachment(t *testing.T) {
+	theme := DarkTheme()
+	item := emailItem{email: fastmail.Email{
+		Subject:     "With file",
+		From:        fastmail.EmailAddress{Name: "Dave"},
+		Attachments: []fastmail.Attachment{{Name: "report.pdf"}},
+	}}
+
+	title := item.richTitle(theme, 80)
+	assert.Contains(t, title, "📎")
+}
+
 func TestEmailList_AlternatingRows(t *testing.T) {
 	theme := DarkTheme()
 	item1 := emailItem{email: fastmail.Email{Subject: "First"}}

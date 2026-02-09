@@ -163,8 +163,10 @@ func TestView_Error(t *testing.T) {
 func TestView_MailboxList(t *testing.T) {
 	m := New(nil)
 	m.connecting = false
+	m.width = 120
+	m.height = 40
 	m.mailboxList.loading = false
-	m.mailboxList.setSize(80, 24)
+	m.mailboxList.setSize(20, 35)
 
 	v := m.View()
 	assert.Contains(t, v, "Mailboxes")
@@ -560,4 +562,51 @@ func TestUpdate_MailboxesLoaded_UpdatesStats(t *testing.T) {
 	model := updated.(Model)
 
 	assert.Equal(t, uint64(15), model.statsBar.unreadCount)
+}
+
+func TestView_ComposeOverlay_RendersOnTopOfLayout(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+	m.view = viewCompose
+	cm := newComposeModel()
+	cm.setSize(120, 40)
+	m.composeView = &cm
+
+	v := m.View()
+	assert.Contains(t, v, "To:")
+}
+
+func TestView_HelpOverlay_RendersOnTopOfLayout(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+	m.helpOverlay = true
+
+	v := m.View()
+	assert.Contains(t, v, "help")
+}
+
+func TestUpdate_ThreadView_FromPreview_StaysInLayout(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+	m.view = viewEmailList
+	m.panes.focus = PanePreview
+
+	email := fastmail.Email{ID: "e1", ThreadID: "t1"}
+	er := newEmailReaderModel(email)
+	er.setSize(80, 20)
+	er.showThread = true
+	m.emailReader = &er
+
+	// updateEmailReader should detect showThread and create threadView
+	result, cmd := m.updateEmailReader(tea.Msg(nil))
+	model := result.(Model)
+
+	require.NotNil(t, model.threadView)
+	assert.NotNil(t, cmd) // fetchThreadCmd
 }
