@@ -657,14 +657,12 @@ func (m Model) viewDashboard() string {
 	sidebarStyle := lipgloss.NewStyle().
 		Width(layout.sidebarWidth - 2). // account for border
 		Height(paneHeight).
-		MaxHeight(paneHeight).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(sidebarBorder)
 
 	mainStyle := lipgloss.NewStyle().
 		Width(layout.mainWidth - 2). // account for border
 		Height(paneHeight).
-		MaxHeight(paneHeight).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(mainBorder)
 

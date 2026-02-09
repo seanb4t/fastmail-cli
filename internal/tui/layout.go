@@ -2,7 +2,7 @@ package tui
 
 const (
 	sidebarDefaultWidth = 20
-	statsBarHeight      = 2
+	statsBarHeight      = 1
 	keyBarHeight        = 1
 	splitMin            = 30
 	splitMax            = 80
