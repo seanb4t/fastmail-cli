@@ -55,6 +55,7 @@ func NewRootCommand() *RootCommand {
 	root.cmd.AddCommand(newExportCommand())
 	root.cmd.AddCommand(newMCPCommand())
 	root.cmd.AddCommand(newCompletionCommand())
+	root.cmd.AddCommand(newTUICommand())
 
 	return root
 }
