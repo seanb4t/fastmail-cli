@@ -54,6 +54,7 @@ func NewRootCommand() *RootCommand {
 	root.cmd.AddCommand(newFilterCommand())
 	root.cmd.AddCommand(newExportCommand())
 	root.cmd.AddCommand(newMCPCommand())
+	root.cmd.AddCommand(newCompletionCommand())
 
 	return root
 }
