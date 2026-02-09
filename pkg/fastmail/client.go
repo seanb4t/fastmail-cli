@@ -3,11 +3,26 @@ package fastmail
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/samber/oops"
 
 	"github.com/seanb4t/fastmail-cli/internal/jmap"
 )
+
+type clientConfig struct {
+	httpClient *http.Client
+}
+
+// ClientOption configures a Client.
+type ClientOption func(*clientConfig)
+
+// WithHTTPClient sets a custom HTTP client, passed through to the underlying JMAP client.
+func WithHTTPClient(httpClient *http.Client) ClientOption {
+	return func(cfg *clientConfig) {
+		cfg.httpClient = httpClient
+	}
+}
 
 // Client provides high-level Fastmail operations.
 type Client struct {
@@ -17,9 +32,19 @@ type Client struct {
 
 // NewClient creates a new Fastmail client.
 // The endpoint should be the JMAP session URL (e.g., https://api.fastmail.com/jmap/session).
-func NewClient(endpoint, accessToken string) *Client {
+func NewClient(endpoint, accessToken string, opts ...ClientOption) *Client {
+	var cfg clientConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	var jmapOpts []jmap.ClientOption
+	if cfg.httpClient != nil {
+		jmapOpts = append(jmapOpts, jmap.WithHTTPClient(cfg.httpClient))
+	}
+
 	return &Client{
-		jmap: jmap.NewClient(endpoint, accessToken),
+		jmap: jmap.NewClient(endpoint, accessToken, jmapOpts...),
 	}
 }
 

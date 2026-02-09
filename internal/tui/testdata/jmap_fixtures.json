@@ -1,0 +1,344 @@
+{
+  "session": {
+    "capabilities": {
+      "urn:ietf:params:jmap:core": {
+        "maxSizeUpload": 50000000,
+        "maxConcurrentUpload": 4,
+        "maxSizeRequest": 10000000,
+        "maxConcurrentRequests": 8,
+        "maxCallsInRequest": 16,
+        "maxObjectsInGet": 4096,
+        "maxObjectsInSet": 4096,
+        "collationAlgorithms": [
+          "i;ascii-numeric",
+          "i;ascii-casemap",
+          "i;unicode-casemap"
+        ]
+      },
+      "urn:ietf:params:jmap:mail": {}
+    },
+    "accounts": {
+      "u1234": {
+        "name": "test@fastmail.com",
+        "isPersonal": true,
+        "isReadOnly": false,
+        "accountCapabilities": {
+          "urn:ietf:params:jmap:mail": {
+            "maxMailboxesPerEmail": null,
+            "maxMailboxDepth": null,
+            "maxSizeMailboxName": 490,
+            "maxSizeAttachmentsPerEmail": 50000000,
+            "emailQuerySortOptions": [
+              "receivedAt",
+              "sentAt",
+              "size",
+              "from",
+              "to",
+              "subject"
+            ],
+            "mayCreateTopLevelMailbox": true
+          }
+        }
+      }
+    },
+    "primaryAccounts": {
+      "urn:ietf:params:jmap:mail": "u1234"
+    },
+    "username": "test@fastmail.com",
+    "apiUrl": "{{API_URL}}/jmap/api",
+    "downloadUrl": "{{API_URL}}/jmap/download/{accountId}/{blobId}/{name}?type={type}",
+    "uploadUrl": "{{API_URL}}/jmap/upload/{accountId}/",
+    "eventSourceUrl": "{{API_URL}}/jmap/eventsource/?types={types}&closeafter={closeafter}&ping={ping}",
+    "state": "session-state-001"
+  },
+  "mailboxes": {
+    "accountId": "u1234",
+    "state": "mailbox-state-001",
+    "list": [
+      {
+        "id": "mb-inbox",
+        "name": "Inbox",
+        "role": "inbox",
+        "sortOrder": 0,
+        "totalEmails": 25,
+        "unreadEmails": 3,
+        "totalThreads": 20,
+        "unreadThreads": 3,
+        "isSubscribed": true,
+        "parentId": null
+      },
+      {
+        "id": "mb-drafts",
+        "name": "Drafts",
+        "role": "drafts",
+        "sortOrder": 1,
+        "totalEmails": 2,
+        "unreadEmails": 0,
+        "totalThreads": 2,
+        "unreadThreads": 0,
+        "isSubscribed": true,
+        "parentId": null
+      },
+      {
+        "id": "mb-sent",
+        "name": "Sent",
+        "role": "sent",
+        "sortOrder": 2,
+        "totalEmails": 150,
+        "unreadEmails": 0,
+        "totalThreads": 120,
+        "unreadThreads": 0,
+        "isSubscribed": true,
+        "parentId": null
+      },
+      {
+        "id": "mb-archive",
+        "name": "Archive",
+        "role": "archive",
+        "sortOrder": 3,
+        "totalEmails": 500,
+        "unreadEmails": 0,
+        "totalThreads": 410,
+        "unreadThreads": 0,
+        "isSubscribed": true,
+        "parentId": null
+      },
+      {
+        "id": "mb-trash",
+        "name": "Trash",
+        "role": "trash",
+        "sortOrder": 4,
+        "totalEmails": 10,
+        "unreadEmails": 0,
+        "totalThreads": 8,
+        "unreadThreads": 0,
+        "isSubscribed": true,
+        "parentId": null
+      }
+    ],
+    "notFound": []
+  },
+  "emailQuery": {
+    "accountId": "u1234",
+    "queryState": "query-state-001",
+    "canCalculateChanges": true,
+    "position": 0,
+    "limit": 50,
+    "total": 5,
+    "ids": [
+      "em-001",
+      "em-002",
+      "em-003",
+      "em-004",
+      "em-005"
+    ]
+  },
+  "emails": {
+    "accountId": "u1234",
+    "state": "email-state-001",
+    "list": [
+      {
+        "id": "em-001",
+        "blobId": "blob-001",
+        "threadId": "th-001",
+        "mailboxIds": {
+          "mb-inbox": true
+        },
+        "keywords": {},
+        "from": [
+          {
+            "name": "Alice Chen",
+            "email": "alice@example.com"
+          }
+        ],
+        "to": [
+          {
+            "name": "Test User",
+            "email": "test@fastmail.com"
+          }
+        ],
+        "subject": "Weekly Team Standup Notes",
+        "receivedAt": "2026-02-09T10:30:00Z",
+        "preview": "Here are the notes from today's standup. Backend team completed the API migration ahead of schedule. Frontend is on track for the v2.1 release.",
+        "size": 4523,
+        "hasAttachment": false,
+        "bodyValues": {
+          "1": {
+            "value": "Hi team,\n\nHere are the notes from today's standup.\n\nBackend team:\n- Completed the API migration ahead of schedule\n- Starting work on the caching layer\n\nFrontend team:\n- On track for the v2.1 release\n- Fixed 3 accessibility issues\n\nDevOps:\n- Kubernetes cluster upgrade planned for Thursday\n- Monitoring dashboards updated\n\nAction items:\n- Alice: Send updated timeline to stakeholders\n- Bob: Review the caching proposal by Wednesday\n\nBest,\nAlice",
+            "isEncodingProblem": false,
+            "isTruncated": false
+          }
+        },
+        "textBody": [
+          {
+            "partId": "1",
+            "type": "text/plain"
+          }
+        ]
+      },
+      {
+        "id": "em-002",
+        "blobId": "blob-002",
+        "threadId": "th-002",
+        "mailboxIds": {
+          "mb-inbox": true
+        },
+        "keywords": {
+          "$flagged": true
+        },
+        "from": [
+          {
+            "name": "Bob Martinez",
+            "email": "bob@example.com"
+          }
+        ],
+        "to": [
+          {
+            "name": "Test User",
+            "email": "test@fastmail.com"
+          }
+        ],
+        "subject": "Project Deadline Update",
+        "receivedAt": "2026-02-09T09:15:00Z",
+        "preview": "The deadline for Phase 2 has been moved to March 15th. Please update your project plans accordingly and let me know if this impacts any dependencies.",
+        "size": 3187,
+        "hasAttachment": false,
+        "bodyValues": {
+          "1": {
+            "value": "Hi everyone,\n\nThe deadline for Phase 2 has been moved to March 15th. This gives us an additional two weeks to complete the integration testing.\n\nPlease update your project plans accordingly and let me know if this impacts any dependencies.\n\nKey dates:\n- Code freeze: March 8th\n- Integration testing: March 8-12\n- Deployment: March 15th\n\nLet me know if you have any questions.\n\nBest,\nBob",
+            "isEncodingProblem": false,
+            "isTruncated": false
+          }
+        },
+        "textBody": [
+          {
+            "partId": "1",
+            "type": "text/plain"
+          }
+        ]
+      },
+      {
+        "id": "em-003",
+        "blobId": "blob-003",
+        "threadId": "th-003",
+        "mailboxIds": {
+          "mb-inbox": true
+        },
+        "keywords": {
+          "$seen": true
+        },
+        "from": [
+          {
+            "name": "ACME Billing",
+            "email": "billing@acme.corp"
+          }
+        ],
+        "to": [
+          {
+            "name": "Test User",
+            "email": "test@fastmail.com"
+          }
+        ],
+        "subject": "Invoice #2847 Attached",
+        "receivedAt": "2026-02-08T16:45:00Z",
+        "preview": "Please find attached the invoice for services rendered in January 2026. Payment is due within 30 days. If you have any questions, contact accounts@acme.corp.",
+        "size": 18942,
+        "hasAttachment": true,
+        "bodyValues": {
+          "1": {
+            "value": "Dear Customer,\n\nPlease find attached the invoice for services rendered in January 2026.\n\nInvoice Number: #2847\nAmount Due: $4,250.00\nDue Date: March 10, 2026\n\nPayment is due within 30 days. If you have any questions about this invoice, please contact accounts@acme.corp.\n\nThank you for your business.\n\nRegards,\nACME Billing Department",
+            "isEncodingProblem": false,
+            "isTruncated": false
+          }
+        },
+        "textBody": [
+          {
+            "partId": "1",
+            "type": "text/plain"
+          }
+        ]
+      },
+      {
+        "id": "em-004",
+        "blobId": "blob-004",
+        "threadId": "th-004",
+        "mailboxIds": {
+          "mb-inbox": true
+        },
+        "keywords": {
+          "$seen": true
+        },
+        "from": [
+          {
+            "name": "Carol Davis",
+            "email": "carol@example.com"
+          }
+        ],
+        "to": [
+          {
+            "name": "Test User",
+            "email": "test@fastmail.com"
+          }
+        ],
+        "subject": "Re: Architecture Review",
+        "receivedAt": "2026-02-08T14:20:00Z",
+        "preview": "I reviewed the proposed changes to the event sourcing layer. Overall the design looks solid, but I have a few concerns about the retry mechanism.",
+        "size": 6731,
+        "hasAttachment": false,
+        "bodyValues": {
+          "1": {
+            "value": "Hi,\n\nI reviewed the proposed changes to the event sourcing layer. Overall the design looks solid, but I have a few concerns about the retry mechanism.\n\n1. The exponential backoff should cap at 30 seconds, not 60\n2. We need a circuit breaker for the downstream API calls\n3. The dead letter queue configuration needs to handle schema versioning\n\nI've added inline comments to the design doc. Let's discuss in our 1:1 on Thursday.\n\nThanks,\nCarol",
+            "isEncodingProblem": false,
+            "isTruncated": false
+          }
+        },
+        "textBody": [
+          {
+            "partId": "1",
+            "type": "text/plain"
+          }
+        ]
+      },
+      {
+        "id": "em-005",
+        "blobId": "blob-005",
+        "threadId": "th-005",
+        "mailboxIds": {
+          "mb-inbox": true
+        },
+        "keywords": {},
+        "from": [
+          {
+            "name": "Dave Wilson",
+            "email": "dave@example.com"
+          }
+        ],
+        "to": [
+          {
+            "name": "Test User",
+            "email": "test@fastmail.com"
+          }
+        ],
+        "subject": "Lunch tomorrow?",
+        "receivedAt": "2026-02-08T11:00:00Z",
+        "preview": "Hey, want to grab lunch tomorrow? I was thinking that new ramen place on 5th Street. They have great reviews and it's not too far from the office.",
+        "size": 1842,
+        "hasAttachment": false,
+        "bodyValues": {
+          "1": {
+            "value": "Hey,\n\nWant to grab lunch tomorrow? I was thinking that new ramen place on 5th Street. They have great reviews and it's not too far from the office.\n\nHow about 12:30?\n\nDave",
+            "isEncodingProblem": false,
+            "isTruncated": false
+          }
+        },
+        "textBody": [
+          {
+            "partId": "1",
+            "type": "text/plain"
+          }
+        ]
+      }
+    ],
+    "notFound": []
+  }
+}

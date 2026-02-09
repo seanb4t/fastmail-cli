@@ -347,6 +347,15 @@ func (m Model) handleLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) { //n
 }
 
 func (m Model) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// When sidebar is focused in a split-pane view, route keys to the mailbox
+	// list so users can navigate mailboxes while the email list is visible.
+	// Skip in fullscreen/modal views and filter mode where keys belong elsewhere.
+	if m.panes.focus == PaneMailbox && !m.isFullscreenView() && !m.isFiltering() {
+		if _, isKey := msg.(tea.KeyMsg); isKey {
+			return m.updateMailboxList(msg)
+		}
+	}
+
 	switch m.view {
 	case viewMailboxList:
 		return m.updateMailboxList(msg)

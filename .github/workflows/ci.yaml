@@ -21,6 +21,8 @@ jobs:
 
       - name: Run tests
         run: go test -race ./...
+        env:
+          LIPGLOSS_COLOR_PROFILE: ascii
 
       - name: Lint
         uses: golangci/golangci-lint-action@v7

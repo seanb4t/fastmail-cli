@@ -1,3 +1,9 @@
 
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads
+
+# Golden files: no line-ending normalization
+*.golden -text
+
+# VHS output: treat as binary
+docs/vhs/*.gif binary

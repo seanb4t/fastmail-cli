@@ -39,6 +39,9 @@ dist/
 # Lefthook local overrides
 lefthook.local.yaml
 
+# VHS recordings (generated)
+docs/vhs/*.gif
+
 # Gas Town (added by gt)
 .runtime/
 .claude/

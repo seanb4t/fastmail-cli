@@ -1,0 +1,40 @@
+[39A unread 3  │  flagged 0  │  today 0                                                                        Fastmail CLI 
+╭──────────────────╮╭─────────────────────────────────────────────────────────────────────────────────────────────────╮ 
+│   Mailboxes      ││   Inbox                                                                                         │ 
+│                  ││                                                                                                 │ 
+│  5 items         ││  5 items                                                                                        │ 
+│                  ││                                                                                                 │ 
+││ Inbox (3)       │││ *  — Weekly Team Standup Notes                                                                 │ 
+││ 25 emails       │││ 7h ago  Here are the notes from today's standup. Backend team completed the API migrati…       │ 
+│                  ││                                                                                                 │ 
+│  Drafts          ││  !  — Project Deadline Update                                                                   │ 
+│  2 emails        ││  8h ago  The deadline for Phase 2 has been moved to March 15th. Please update your proje…       │ 
+│                  ││                                                                                                 │ 
+│  Sent            ││     — Invoice #2847 Attached                                                                    │ 
+│  150 emails      ││  1d ago  Please find attached the invoice for services rendered in January 2026. Payment…       │ 
+│                  ││                                                                                                 │ 
+│  Archive         ││                                                                                                 │ 
+│  500 emails      ││                                                                                                 │ 
+│                  ││  ••                                                                                             │ 
+│  Trash           ││                                                                                                 │ 
+│  10 emails       ││  ↑/k up • ↓/j down • / filter • q quit • ? more                                                 │ 
+│                  ││─────────────────────────────────────────────────────────────────────────────────────────────────│ 
+│                  ││──                                                                                               │ 
+│                  ││  From: Alice Chen <alice@example.com>                                                           │ 
+│                  ││  To:   Test User <test@fastmail.com>                                                            │ 
+│                  ││  Subj: Weekly Team Standup Notes                                                                │ 
+│                  ││  Date: Mon, 09 Feb 2026 10:30 UTC                                                               │ 
+│                  ││  ─────────────────────────────────────────────────────────────────────────────────────────────  │ 
+│                  ││  Hi team,                                                                                       │ 
+│                  ││                                                                                                 │ 
+│                  ││  Here are the notes from today's standup.                                                       │ 
+│                  ││                                                                                                 │ 
+│                  ││  Backend team:                                                                                  │ 
+│                  ││  - Completed the API migration ahead of schedule                                                │ 
+│                  ││  - Starting work on the caching layer                                                           │ 
+│                  ││                                                                                                 │ 
+│                  ││  Frontend team:                                                                                 │ 
+│                  ││  - On track for the v2.1 release                                                                │ 
+│  ↑/k up • ↓/j    ││  - Fixed 3 accessibility issues                                                                 │ 
+╰──────────────────╯╰─────────────────────────────────────────────────────────────────────────────────────────────────╯ 
+enter read  a archive  f flag  c compose  / search  tab pane  b sidebar  ? help  q quit                                 

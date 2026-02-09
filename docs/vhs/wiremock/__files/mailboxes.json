@@ -1,0 +1,72 @@
+{
+  "sessionState": "mock-state",
+  "methodResponses": [
+    ["Mailbox/get", {
+      "accountId": "u1234",
+      "state": "mailbox-state-001",
+      "list": [
+        {
+          "id": "mb-inbox",
+          "name": "Inbox",
+          "role": "inbox",
+          "sortOrder": 0,
+          "totalEmails": 25,
+          "unreadEmails": 3,
+          "totalThreads": 20,
+          "unreadThreads": 3,
+          "isSubscribed": true,
+          "parentId": null
+        },
+        {
+          "id": "mb-drafts",
+          "name": "Drafts",
+          "role": "drafts",
+          "sortOrder": 1,
+          "totalEmails": 2,
+          "unreadEmails": 0,
+          "totalThreads": 2,
+          "unreadThreads": 0,
+          "isSubscribed": true,
+          "parentId": null
+        },
+        {
+          "id": "mb-sent",
+          "name": "Sent",
+          "role": "sent",
+          "sortOrder": 2,
+          "totalEmails": 150,
+          "unreadEmails": 0,
+          "totalThreads": 120,
+          "unreadThreads": 0,
+          "isSubscribed": true,
+          "parentId": null
+        },
+        {
+          "id": "mb-archive",
+          "name": "Archive",
+          "role": "archive",
+          "sortOrder": 3,
+          "totalEmails": 500,
+          "unreadEmails": 0,
+          "totalThreads": 410,
+          "unreadThreads": 0,
+          "isSubscribed": true,
+          "parentId": null
+        },
+        {
+          "id": "mb-trash",
+          "name": "Trash",
+          "role": "trash",
+          "sortOrder": 4,
+          "totalEmails": 10,
+          "unreadEmails": 0,
+          "totalThreads": 8,
+          "unreadThreads": 0,
+          "isSubscribed": true,
+          "parentId": null
+        }
+      ],
+      "notFound": []
+    }, "0"]
+  ]
+}
