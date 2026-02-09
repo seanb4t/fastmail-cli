@@ -350,3 +350,54 @@ func TestEmailListModel_Update_SearchResults(t *testing.T) {
 	assert.Contains(t, m.list.Title, "Search:")
 	assert.Equal(t, 1, len(m.list.Items()))
 }
+
+func TestEmailItem_RichTitle_Unread(t *testing.T) {
+	theme := DarkTheme()
+	item := emailItem{email: fastmail.Email{
+		Subject:  "Important message",
+		From:     fastmail.EmailAddress{Name: "Alice"},
+		Keywords: []string{}, // unread
+	}}
+
+	title := item.richTitle(theme, 80)
+	assert.Contains(t, title, "Alice")
+	assert.Contains(t, title, "Important message")
+}
+
+func TestEmailItem_RichTitle_Flagged(t *testing.T) {
+	theme := DarkTheme()
+	item := emailItem{email: fastmail.Email{
+		Subject:  "Starred",
+		From:     fastmail.EmailAddress{Name: "Bob"},
+		Keywords: []string{"$flagged"},
+	}}
+
+	title := item.richTitle(theme, 100)
+	assert.Contains(t, title, "Bob")
+	assert.Contains(t, title, "★")
+}
+
+func TestEmailItem_RichTitle_Read(t *testing.T) {
+	theme := DarkTheme()
+	item := emailItem{email: fastmail.Email{
+		Subject:  "Old message",
+		From:     fastmail.EmailAddress{Name: "Carol"},
+		Keywords: []string{"$seen"},
+	}}
+
+	title := item.richTitle(theme, 60)
+	assert.Contains(t, title, "Carol")
+}
+
+func TestEmailList_AlternatingRows(t *testing.T) {
+	theme := DarkTheme()
+	item1 := emailItem{email: fastmail.Email{Subject: "First"}}
+	item2 := emailItem{email: fastmail.Email{Subject: "Second"}}
+
+	row1 := item1.richTitle(theme, 80)
+	row2 := item2.richTitle(theme, 120)
+
+	// Both should render without error
+	assert.Contains(t, row1, "First")
+	assert.Contains(t, row2, "Second")
+}

@@ -534,3 +534,30 @@ func TestUpdate_Enter_InPreview_OpensFullscreen(t *testing.T) {
 
 	assert.Equal(t, viewEmailReader, model.view)
 }
+
+func TestView_StatsBar_Visible(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+	m.statsBar.unreadCount = 42
+	m.statsBar.flaggedCount = 5
+
+	v := m.View()
+	assert.Contains(t, v, "42")
+	assert.Contains(t, v, "5")
+}
+
+func TestUpdate_MailboxesLoaded_UpdatesStats(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	mailboxes := []fastmail.Mailbox{
+		{ID: "1", Name: "Inbox", UnreadEmails: 10},
+		{ID: "2", Name: "Work", UnreadEmails: 5},
+	}
+
+	updated, _ := m.Update(mailboxesLoadedMsg{mailboxes: mailboxes})
+	model := updated.(Model)
+
+	assert.Equal(t, uint64(15), model.statsBar.unreadCount)
+}

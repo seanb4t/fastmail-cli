@@ -48,6 +48,7 @@ type Model struct {
 	panes            paneManager
 	theme            Theme
 	keyBar           keyBarModel
+	statsBar         statsBarModel
 	actionSource     view // which view initiated the current action
 	width            int
 	height           int
@@ -68,6 +69,7 @@ func New(client *fastmail.Client) Model {
 		panes:       newPaneManager(),
 		theme:       theme,
 		keyBar:      newKeyBarModel(theme),
+		statsBar:    newStatsBarModel(theme),
 	}
 }
 
@@ -193,6 +195,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connecting = false
 		return m, m.fetchMailboxesCmd()
 
+	case mailboxesLoadedMsg:
+		m.statsBar.updateFromMailboxes(msg.mailboxes)
+		// Continue to updateView to also update the mailbox list
+
 	case mailboxSelectedMsg:
 		el := newEmailListModel(msg.mailbox)
 		el.setSize(m.width, m.height)
@@ -214,16 +220,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case attachmentDownloadedMsg:
-		if m.emailReader != nil {
-			return m, m.emailReader.status.setStatus(fmt.Sprintf("Downloaded %s", msg.name), false)
-		}
-		return m, nil
+		return m.handleAttachmentDownloaded(msg)
 
 	case attachmentDownloadErrMsg:
-		if m.emailReader != nil {
-			return m, m.emailReader.status.setStatus(fmt.Sprintf("Download failed: %v", msg.err), true)
-		}
-		return m, nil
+		return m.handleAttachmentDownloadErr(msg)
 
 	case emailSentMsg:
 		return m.handleEmailSent(msg)
@@ -671,10 +671,13 @@ func (m Model) viewDashboard() string {
 		panes = mainStyle.Render(mainContent)
 	}
 
+	// Stats bar
+	statsBarContent := m.statsBar.view(m.width)
+
 	// Key bar
 	keyBarContent := m.keyBar.viewForPane(m.panes.focus)
 
-	return lipgloss.JoinVertical(lipgloss.Left, panes, keyBarContent)
+	return lipgloss.JoinVertical(lipgloss.Left, statsBarContent, panes, keyBarContent)
 }
 
 // dispatchAction fires the appropriate tea.Cmd for an email action.
@@ -771,6 +774,20 @@ func (m Model) handleActionErr(msg emailActionErrMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+func (m Model) handleAttachmentDownloaded(msg attachmentDownloadedMsg) (tea.Model, tea.Cmd) {
+	if m.emailReader != nil {
+		return m, m.emailReader.status.setStatus(fmt.Sprintf("Downloaded %s", msg.name), false)
+	}
+	return m, nil
+}
+
+func (m Model) handleAttachmentDownloadErr(msg attachmentDownloadErrMsg) (tea.Model, tea.Cmd) {
+	if m.emailReader != nil {
+		return m, m.emailReader.status.setStatus(fmt.Sprintf("Download failed: %v", msg.err), true)
+	}
+	return m, nil
 }
 
 // removeEmailFromList removes an email item from the email list by ID.

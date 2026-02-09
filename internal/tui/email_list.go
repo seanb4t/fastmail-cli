@@ -301,3 +301,44 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen-1] + "…"
 }
+
+func (i emailItem) richTitle(theme Theme, width int) string {
+	// Flag indicator
+	var flagStr string
+	flagStyle := lipgloss.NewStyle().Foreground(theme.Flagged)
+	if i.email.IsFlagged() {
+		flagStr = flagStyle.Render("★ ")
+	} else {
+		flagStr = "  "
+	}
+
+	// From
+	from := i.email.From.Email
+	if i.email.From.Name != "" {
+		from = i.email.From.Name
+	}
+	from = truncate(from, 20)
+
+	// Subject
+	subject := i.email.Subject
+	if subject == "" {
+		subject = "(no subject)"
+	}
+
+	// Date
+	age := formatAge(i.email.ReceivedAt)
+
+	// Style based on read state
+	textStyle := lipgloss.NewStyle().Foreground(theme.Unread).Bold(true)
+	if i.email.IsRead() {
+		textStyle = lipgloss.NewStyle().Foreground(theme.Read)
+	}
+
+	dateStyle := lipgloss.NewStyle().Foreground(theme.Read).Align(lipgloss.Right)
+
+	fromRendered := textStyle.Width(22).Render(from)
+	subjectRendered := textStyle.Render(truncate(subject, width-50))
+	dateRendered := dateStyle.Render(age)
+
+	return flagStr + fromRendered + " " + subjectRendered + " " + dateRendered
+}
