@@ -3,7 +3,7 @@
 
 site_name: FastMail CLI
 site_url: https://fastmail-cli.pages.dev
-site_description: A command-line interface for FastMail
+site_description: A CLI, MCP server, and Go library for FastMail via JMAP, CardDAV, and CalDAV
 site_author: FastMail CLI Contributors
 
 docs_dir: .
@@ -12,9 +12,24 @@ site_dir: _site
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Reference:
-      - CLI Commands: reference/cli.md
-      - MCP Integration: reference/mcp.md
+  - CLI Reference:
+      - Overview: cli/index.md
+      - auth: cli/auth.md
+      - mail: cli/mail.md
+      - mailbox: cli/mailbox.md
+      - contacts: cli/contacts.md
+      - calendar: cli/calendar.md
+      - masked-email: cli/masked-email.md
+      - vacation: cli/vacation.md
+      - identity: cli/identity.md
+      - filter: cli/filter.md
+      - export: cli/export.md
+      - account: cli/account.md
+  - MCP Integration:
+      - Overview: mcp/index.md
+      - Setup Guide: mcp/setup.md
+      - Tools Reference: mcp/tools.md
+      - Resources Reference: mcp/resources.md
   - Go Library:
       - Overview: api/index.md
       - Client: api/fastmail.md

@@ -8,86 +8,49 @@ Tools allow Claude to perform actions on your FastMail account.
 
 List emails from a mailbox folder.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `folder` | string | No | Mailbox folder name (default: "Inbox") |
 | `limit` | integer | No | Maximum emails to return (default: 10) |
 
-**Example:**
-
-```
-List the last 5 emails from my Sent folder
-```
-
-**Response:**
-
-```json
-[
-  {
-    "id": "M123",
-    "thread_id": "T456",
-    "subject": "Meeting notes",
-    "preview": "Here are the notes from...",
-    "received_at": "2024-01-15T10:30:00Z",
-    "is_read": true,
-    "is_flagged": false
-  }
-]
-```
-
 ---
 
 ### mail_get
 
-Get a single email by ID.
-
-**Input Schema:**
+Get a single email by its ID.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The email ID |
 
-**Example:**
-
-```
-Show me the full content of email M123
-```
-
 ---
 
 ### mail_search
 
-Search emails by text query.
-
-**Input Schema:**
+Search emails by text query and/or structured filters. Query syntax: `from:alice subject:meeting has:attachment before:2024-06-01 is:unread`. Flags are ANDed with the query.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `query` | string | Yes | Search query (e.g., "from:alice subject:meeting") |
+| `query` | string | No | Search query text with field:value filters |
+| `from` | string | No | Filter by sender address or name |
+| `to` | string | No | Filter by recipient address or name |
+| `subject` | string | No | Filter by subject text |
+| `before` | string | No | Emails before date (YYYY-MM-DD) |
+| `after` | string | No | Emails after date (YYYY-MM-DD) |
+| `has_attachment` | boolean | No | Filter for emails with attachments |
+| `folder` | string | No | Filter by mailbox folder name |
+| `unread` | boolean | No | Filter for unread emails |
+| `flagged` | boolean | No | Filter for flagged/starred emails |
 | `limit` | integer | No | Maximum results (default: 10) |
+| `snippets` | boolean | No | Include highlighted search snippets (default: false) |
 
-**Query Syntax:**
-
-- `from:email@example.com` - Sender
-- `to:email@example.com` - Recipient
-- `subject:keyword` - Subject contains
-- `keyword` - Any field contains
-
-**Example:**
-
-```
-Search for emails from alice@example.com about the project
-```
+At least one query or filter parameter is required.
 
 ---
 
 ### mail_send
 
-Compose and send a new email.
-
-**Input Schema:**
+Compose and send a new email. Use `schedule` for delayed delivery.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
@@ -96,21 +59,7 @@ Compose and send a new email.
 | `bcc` | array | No | BCC recipient addresses |
 | `subject` | string | Yes | Email subject |
 | `body` | string | Yes | Email body text |
-
-**Example:**
-
-```
-Send an email to bob@example.com with subject "Quick question" and body "Are you free for a call tomorrow?"
-```
-
-**Response:**
-
-```json
-{
-  "id": "M789",
-  "status": "sent"
-}
-```
+| `schedule` | string | No | Schedule delivery time in RFC3339 format |
 
 ---
 
@@ -118,19 +67,11 @@ Send an email to bob@example.com with subject "Quick question" and body "Are you
 
 Send a reply to an existing email.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `email_id` | string | Yes | ID of the email to reply to |
 | `body` | string | Yes | Reply body text |
 | `reply_all` | boolean | No | Reply to all recipients (default: false) |
-
-**Example:**
-
-```
-Reply to email M123 saying "Thanks, I'll review it today"
-```
 
 ---
 
@@ -138,18 +79,10 @@ Reply to email M123 saying "Thanks, I'll review it today"
 
 Move an email to a different folder.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The email ID |
 | `folder` | string | Yes | Target folder name |
-
-**Example:**
-
-```
-Move email M123 to the Archive folder
-```
 
 ---
 
@@ -157,17 +90,9 @@ Move email M123 to the Archive folder
 
 Delete an email (moves to Trash, or permanently deletes if already in Trash).
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The email ID |
-
-**Example:**
-
-```
-Delete email M123
-```
 
 ---
 
@@ -175,17 +100,9 @@ Delete email M123
 
 Get all emails in a conversation thread.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `thread_id` | string | Yes | The thread ID |
-
-**Example:**
-
-```
-Show me the full thread for thread T456
-```
 
 ---
 
@@ -193,30 +110,81 @@ Show me the full thread for thread T456
 
 Set or remove flags/keywords on an email.
 
-**Input Schema:**
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The email ID |
+| `keywords` | object | Yes | Keys are keyword names (e.g., `$seen`, `$flagged`), values are `true` (set) or `false` (remove) |
+
+---
+
+### mail_attachments
+
+List attachments on an email.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The email ID |
-| `keywords` | object | Yes | Keys are keyword names (e.g., `$seen`, `$flagged`), values are `true`/`false` |
 
-**Example:**
+Returns: array of `{ blob_id, name, type, size, disposition }`.
 
-```
-Flag email M123 as important and mark it as read
-```
+---
 
-**Response:**
+### mail_download
 
-```json
-{
-  "id": "M123",
-  "keywords": {
-    "$seen": true,
-    "$flagged": true
-  }
-}
-```
+Download an email attachment blob.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The email ID |
+| `blob_id` | string | Yes | The blob ID of the attachment |
+| `name` | string | No | Filename hint for the download |
+
+Returns base64-encoded content.
+
+---
+
+### mail_import
+
+Import an RFC 5322 email message into a mailbox.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `content` | string | Yes | Base64-encoded RFC 5322 message content |
+| `folder` | string | No | Target mailbox folder (default: Inbox) |
+| `seen` | boolean | No | Mark as read (default: false) |
+| `flagged` | boolean | No | Mark as flagged (default: false) |
+
+---
+
+### mail_upload
+
+Upload a blob for use in email drafts.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `content` | string | Yes | Base64-encoded file content |
+| `content_type` | string | Yes | MIME content type (e.g., `application/pdf`) |
+| `filename` | string | Yes | Filename for the blob |
+
+---
+
+### mail_scheduled
+
+List pending scheduled email deliveries.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `limit` | integer | No | Maximum results (default: 10) |
+
+---
+
+### mail_scheduled_cancel
+
+Cancel a pending scheduled email delivery.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `submission_id` | string | Yes | The submission ID to cancel |
 
 ---
 
@@ -224,28 +192,9 @@ Flag email M123 as important and mark it as read
 
 ### mailbox_list
 
-List all mailbox folders with unread and total message counts.
+List all mailbox folders with unread/total counts.
 
-**Input Schema:** None
-
-**Example:**
-
-```
-Show my mailbox folders
-```
-
-**Response:**
-
-```json
-[
-  {
-    "id": "MB001",
-    "name": "Inbox",
-    "unread_count": 12,
-    "total_count": 458
-  }
-]
-```
+No input parameters.
 
 ---
 
@@ -253,18 +202,10 @@ Show my mailbox folders
 
 Create a new mailbox folder.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `name` | string | Yes | Name for the new mailbox |
-| `parent_id` | string | No | Parent mailbox ID for nesting |
-
-**Example:**
-
-```
-Create a new mailbox folder called "Receipts"
-```
+| `parent_id` | string | No | Parent mailbox ID for nested folders |
 
 ---
 
@@ -272,18 +213,10 @@ Create a new mailbox folder called "Receipts"
 
 Rename an existing mailbox folder.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The mailbox ID |
 | `name` | string | Yes | New name for the mailbox |
-
-**Example:**
-
-```
-Rename mailbox MB001 to "Old Receipts"
-```
 
 ---
 
@@ -291,17 +224,9 @@ Rename mailbox MB001 to "Old Receipts"
 
 Delete a mailbox folder by ID.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The mailbox ID |
-
-**Example:**
-
-```
-Delete mailbox MB001
-```
 
 ---
 
@@ -311,27 +236,17 @@ Delete mailbox MB001
 
 List all masked email addresses.
 
-**Input Schema:** None
+No input parameters.
 
-**Example:**
+---
 
-```
-Show my masked email addresses
-```
+### masked_email_get
 
-**Response:**
+Get a single masked email by ID.
 
-```json
-[
-  {
-    "id": "ME123",
-    "email": "abc123@fastmail.com",
-    "state": "enabled",
-    "for_domain": "example.com",
-    "description": "Newsletter signup"
-  }
-]
-```
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The masked email ID |
 
 ---
 
@@ -339,72 +254,40 @@ Show my masked email addresses
 
 Create a new masked email address.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `domain` | string | No | Domain to associate with the masked email |
 | `description` | string | No | Description for the masked email |
 
-**Example:**
-
-```
-Create a masked email for signing up to newsletter.example.com
-```
-
 ---
 
 ### masked_email_enable
 
-Enable a previously disabled masked email address.
-
-**Input Schema:**
+Enable a masked email by ID.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The masked email ID |
-
-**Example:**
-
-```
-Enable masked email ME123
-```
 
 ---
 
 ### masked_email_disable
 
-Disable a masked email address (stops receiving mail).
-
-**Input Schema:**
+Disable a masked email by ID.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The masked email ID |
-
-**Example:**
-
-```
-Disable masked email ME123
-```
 
 ---
 
 ### masked_email_delete
 
-Delete a masked email address permanently.
-
-**Input Schema:**
+Delete a masked email by ID.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The masked email ID |
-
-**Example:**
-
-```
-Delete masked email ME123
-```
 
 ---
 
@@ -414,13 +297,7 @@ Delete masked email ME123
 
 List all contacts from the address book.
 
-**Input Schema:** None
-
-**Example:**
-
-```
-Show my contacts
-```
+No input parameters.
 
 ---
 
@@ -428,17 +305,9 @@ Show my contacts
 
 Get a single contact by ID.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The contact ID |
-
-**Example:**
-
-```
-Show details for contact C456
-```
 
 ---
 
@@ -446,27 +315,17 @@ Show details for contact C456
 
 Create a new contact.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `name` | string | Yes | Full name |
 | `email` | string | No | Email address |
 | `phone` | string | No | Phone number |
 
-**Example:**
-
-```
-Add a contact named "Jane Smith" with email jane@example.com
-```
-
 ---
 
 ### contacts_update
 
 Update an existing contact.
-
-**Input Schema:**
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
@@ -475,39 +334,41 @@ Update an existing contact.
 | `email` | string | No | Updated email address |
 | `phone` | string | No | Updated phone number |
 
-**Example:**
-
-```
-Update contact C456's email to jane.smith@newdomain.com
-```
-
 ---
 
 ### contacts_delete
 
 Delete a contact by ID.
 
-**Input Schema:**
-
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `id` | string | Yes | The contact ID |
 
-**Example:**
+---
 
-```
-Delete contact C456
-```
+### contacts_search
+
+Search contacts by name or email.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `query` | string | Yes | Search query text |
 
 ---
 
 ## Calendar Tools
 
+### calendar_list
+
+List all available calendars.
+
+No input parameters.
+
+---
+
 ### calendar_events
 
 List calendar events within a date range.
-
-**Input Schema:**
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
@@ -515,19 +376,21 @@ List calendar events within a date range.
 | `start` | string | Yes | Start date/time in RFC3339 format |
 | `end` | string | Yes | End date/time in RFC3339 format |
 
-**Example:**
+---
 
-```
-Show my calendar events for tomorrow
-```
+### calendar_get
+
+Get a single calendar event by ID.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The event ID |
 
 ---
 
 ### calendar_create
 
 Create a new calendar event.
-
-**Input Schema:**
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
@@ -539,11 +402,31 @@ Create a new calendar event.
 | `end` | string | Yes | End date/time in RFC3339 format |
 | `all_day` | boolean | No | Whether this is an all-day event (default: false) |
 
-**Example:**
+---
 
-```
-Create a meeting called "Team standup" tomorrow at 10am for 30 minutes
-```
+### calendar_update
+
+Update an existing calendar event.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The event ID |
+| `calendar_id` | string | No | Calendar ID |
+| `summary` | string | No | Event title/summary |
+| `description` | string | No | Event description |
+| `location` | string | No | Event location |
+| `start` | string | No | Start date/time in RFC3339 format |
+| `end` | string | No | End date/time in RFC3339 format |
+
+---
+
+### calendar_delete
+
+Delete a calendar event by ID.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The event ID |
 
 ---
 
@@ -553,47 +436,123 @@ Create a meeting called "Team standup" tomorrow at 10am for 30 minutes
 
 Get the current vacation/out-of-office auto-reply status.
 
-**Input Schema:** None
+No input parameters.
 
-**Example:**
-
-```
-Check if my vacation auto-reply is enabled
-```
-
-**Response:**
-
-```json
-{
-  "enabled": true,
-  "subject": "Out of Office",
-  "body": "I'm on vacation until Feb 14. I'll respond when I return.",
-  "from_date": "2026-02-07T00:00:00Z",
-  "to_date": "2026-02-14T23:59:59Z"
-}
-```
+Returns: `{ is_enabled, subject, text_body, from_date?, to_date? }`.
 
 ---
 
 ### vacation_set
 
-Enable or disable the vacation auto-reply.
-
-**Input Schema:**
+Enable or disable the vacation/out-of-office auto-reply. When `enabled=true`, `subject` and `body` are required.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `enabled` | boolean | Yes | Whether to enable or disable the auto-reply |
+| `enabled` | boolean | Yes | Whether the vacation response is enabled |
 | `subject` | string | Yes (if enabled) | Auto-reply subject line |
 | `body` | string | Yes (if enabled) | Auto-reply body text |
 | `from_date` | string | No | Start date in RFC3339 format |
 | `to_date` | string | No | End date in RFC3339 format |
 
-**Example:**
+---
 
-```
-Set my vacation reply from Feb 10 to Feb 14 with subject "Out of Office" and body "I'll be back on the 15th"
-```
+## Identity Tools
+
+### identity_list
+
+List all sender identities.
+
+No input parameters.
+
+Returns: array of `{ id, name, email, text_signature, html_signature, reply_to?, bcc?, may_delete }`.
+
+---
+
+### identity_set
+
+Update a sender identity.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The identity ID |
+| `name` | string | No | Display name |
+| `reply_to` | string | No | Reply-to email address |
+| `text_signature` | string | No | Text signature |
+| `html_signature` | string | No | HTML signature |
+
+---
+
+## Filter Tools
+
+### filter_list
+
+List all Sieve filter scripts.
+
+No input parameters.
+
+Returns: array of `{ id, name, is_active, blob_id }`.
+
+---
+
+### filter_get
+
+Get a Sieve filter script by ID with its content.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The filter script ID |
+
+---
+
+### filter_create
+
+Create a new Sieve filter script.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | string | Yes | Name for the filter script |
+| `script` | string | Yes | Sieve script content |
+| `activate` | boolean | No | Activate the script on creation (default: false) |
+
+---
+
+### filter_activate
+
+Activate a Sieve filter script.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The filter script ID |
+
+---
+
+### filter_deactivate
+
+Deactivate a Sieve filter script.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The filter script ID |
+
+---
+
+### filter_validate
+
+Validate Sieve script syntax without storing it.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `script` | string | Yes | Sieve script content to validate |
+
+---
+
+### filter_delete
+
+Delete a Sieve filter script by ID.
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | The filter script ID |
 
 ---
 
@@ -603,21 +562,6 @@ Set my vacation reply from Feb 10 to Feb 14 with subject "Out of Office" and bod
 
 Get storage quota usage for the account.
 
-**Input Schema:** None
+No input parameters.
 
-**Example:**
-
-```
-How much storage am I using?
-```
-
-**Response:**
-
-```json
-{
-  "used": 2147483648,
-  "total": 53687091200,
-  "used_human": "2.0 GB",
-  "total_human": "50.0 GB",
-  "percent_used": 4.0
-}
+Returns: `{ used, limit, used_percent, used_display, limit_display }`.

@@ -14,28 +14,7 @@ Recent emails from your inbox.
 | Name | Recent Inbox |
 | MIME Type | text/plain |
 
-**Content:**
-
-Returns the 10 most recent inbox messages formatted as:
-
-```markdown
-# Inbox (10 messages)
-
-## 1. Subject Line
-- ID: M123
-- Received: 2024-01-15T10:30:00Z
-- Preview: First 100 characters of the email...
-- Status: unread
-
-## 2. Another Subject
-...
-```
-
-**Example prompt:**
-
-```
-Read my inbox resource to see recent emails
-```
+Returns the 10 most recent inbox messages formatted as markdown with subject, ID, received date, preview, and read status.
 
 ---
 
@@ -49,33 +28,11 @@ Content of a specific email message.
 | Name | Email Message |
 | MIME Type | text/plain |
 
-**Parameters:**
-
 | Parameter | Description |
 |-----------|-------------|
 | `id` | The email ID (from inbox or search results) |
 
-**Content:**
-
-```markdown
-# Subject Line
-
-- ID: M123
-- Thread: T456
-- Received: 2024-01-15T10:30:00Z
-- Size: 2048 bytes
-- Status: read
-
-## Preview
-
-Email preview text here...
-```
-
-**Example prompt:**
-
-```
-Read the email fastmail://mail/M123
-```
+Returns email subject, ID, thread ID, received date, size, read status, and preview text.
 
 ---
 
@@ -89,27 +46,27 @@ Your address book contacts.
 | Name | Contacts |
 | MIME Type | text/plain |
 
-**Content:**
+!!! note "CardDAV Required"
+    Contacts require CardDAV configuration. If not configured, the resource directs you to use the `contacts_list` tool instead.
 
-```markdown
-# Contacts (25 total)
+---
 
-## 1. Alice Smith
-- ID: C123
-- Email: alice@example.com
-- Phone: +1-555-1234
+### fastmail://contact/{id}
 
-## 2. Bob Jones
-- ID: C456
-- Email: bob@example.com
-...
-```
+Details of a specific contact.
 
-**Example prompt:**
+| Property | Value |
+|----------|-------|
+| URI Template | `fastmail://contact/{id}` |
+| Name | Contact |
+| MIME Type | text/plain |
 
-```
-Read my contacts to find Bob's email address
-```
+| Parameter | Description |
+|-----------|-------------|
+| `id` | The contact ID |
+
+!!! note "CardDAV Required"
+    Contacts require CardDAV configuration. If not configured, the resource directs you to use the `contacts_get` tool instead.
 
 ---
 
@@ -123,15 +80,8 @@ Calendar events for today.
 | Name | Today's Events |
 | MIME Type | text/plain |
 
-**Content:**
-
-Returns today's calendar events. Requires CalDAV configuration.
-
-**Example prompt:**
-
-```
-What's on my calendar today?
-```
+!!! note "CalDAV Required"
+    Calendar access requires CalDAV configuration.
 
 ---
 
@@ -145,27 +95,25 @@ Your masked email addresses.
 | Name | Masked Emails |
 | MIME Type | text/plain |
 
-**Content:**
+Returns all masked email addresses with ID, state, domain, description, and last message date.
 
-```markdown
-# Masked Emails (5 total)
+---
 
-## 1. abc123@fastmail.com
-- ID: ME123
-- State: enabled
-- Domain: example.com
-- Description: Newsletter signup
-- Last Message: 2024-01-10T15:00:00Z
+### fastmail://masked-email/{id}
 
-## 2. xyz789@fastmail.com
-...
-```
+Details of a specific masked email address.
 
-**Example prompt:**
+| Property | Value |
+|----------|-------|
+| URI Template | `fastmail://masked-email/{id}` |
+| Name | Masked Email |
+| MIME Type | text/plain |
 
-```
-Show my masked emails to see which services I've signed up for
-```
+| Parameter | Description |
+|-----------|-------------|
+| `id` | The masked email ID |
+
+Returns full masked email details including ID, address, state, domain, description, URL, creator, creation date, and last message date.
 
 ---
 
@@ -179,9 +127,9 @@ Read fastmail://inbox and summarize any unread emails
 
 Resources are useful for:
 
-1. **Context gathering** - Give Claude background before asking for actions
-2. **Verification** - Check state before and after operations
-3. **Exploration** - Understand your account structure
+1. **Context gathering** -- Give Claude background before asking for actions
+2. **Verification** -- Check state before and after operations
+3. **Exploration** -- Understand your account structure
 
 ## Resources vs Tools
 
@@ -189,23 +137,24 @@ Resources are useful for:
 |--------|-----------|-------|
 | Purpose | Provide context | Perform actions |
 | Access | Read-only | Read/write |
-| Format | Formatted text | Structured JSON |
+| Format | Formatted text (markdown) | Structured JSON |
 | Caching | May be cached | Always fresh |
 
 Use resources when Claude needs to understand your data. Use tools when you want Claude to do something.
 
 ## Resource Templates
 
-The email resource uses a URI template with a parameter:
+Some resources use URI templates with parameters:
 
 ```
 fastmail://mail/{id}
+fastmail://contact/{id}
+fastmail://masked-email/{id}
 ```
 
-Replace `{id}` with an actual email ID from inbox or search results:
+Replace `{id}` with an actual ID from listing tools or other resources:
 
 ```
 fastmail://mail/M12345abc
+fastmail://masked-email/ME001
 ```
-
-This pattern allows accessing individual emails while keeping the resource list manageable.

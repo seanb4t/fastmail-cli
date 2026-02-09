@@ -1,11 +1,11 @@
 # MCP Setup Guide
 
-Configure FastMail CLI as an MCP server for Claude Desktop.
+Configure FastMail CLI as an MCP server for Claude Desktop or Claude Code.
 
 ## Prerequisites
 
-1. FastMail CLI installed and configured with your API token
-2. Claude Desktop installed
+1. FastMail CLI installed and configured with your API token (`fastmail-cli auth login`)
+2. Claude Desktop or Claude Code installed
 
 ## Claude Desktop Configuration
 
@@ -20,7 +20,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "fastmail": {
       "command": "fastmail-cli",
-      "args": ["mcp", "serve"]
+      "args": ["mcp"]
     }
   }
 }
@@ -35,7 +35,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
   "mcpServers": {
     "fastmail": {
       "command": "fastmail-cli.exe",
-      "args": ["mcp", "serve"]
+      "args": ["mcp"]
     }
   }
 }
@@ -50,7 +50,22 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "fastmail": {
       "command": "fastmail-cli",
-      "args": ["mcp", "serve"]
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+## Claude Code Configuration
+
+Add to your project `.claude/settings.json` or global settings:
+
+```json
+{
+  "mcpServers": {
+    "fastmail": {
+      "command": "fastmail-cli",
+      "args": ["mcp"]
     }
   }
 }
@@ -65,7 +80,7 @@ If `fastmail-cli` is not in your PATH, use the full path:
   "mcpServers": {
     "fastmail": {
       "command": "/path/to/fastmail-cli",
-      "args": ["mcp", "serve"]
+      "args": ["mcp"]
     }
   }
 }
@@ -73,14 +88,14 @@ If `fastmail-cli` is not in your PATH, use the full path:
 
 ## Environment Variables
 
-Pass your API token via environment variable if not using the config file:
+Pass your API token via environment variable if not using the config file or keychain:
 
 ```json
 {
   "mcpServers": {
     "fastmail": {
       "command": "fastmail-cli",
-      "args": ["mcp", "serve"],
+      "args": ["mcp"],
       "env": {
         "FASTMAIL_API_TOKEN": "your-api-token-here"
       }
@@ -104,7 +119,7 @@ Claude should list the available tools and resources.
 Check that `fastmail-cli` is accessible:
 
 ```bash
-fastmail-cli version
+fastmail-cli --version
 ```
 
 ### Authentication Errors
@@ -112,13 +127,7 @@ fastmail-cli version
 Verify your API token is configured:
 
 ```bash
-fastmail-cli config get api-token
-```
-
-Or set it:
-
-```bash
-fastmail-cli config set api-token YOUR_TOKEN
+fastmail-cli auth status
 ```
 
 ### Connection Issues
@@ -126,7 +135,7 @@ fastmail-cli config set api-token YOUR_TOKEN
 Test the MCP server manually:
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | fastmail-cli mcp serve
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | fastmail-cli mcp
 ```
 
 You should see a JSON response with server capabilities.
@@ -148,7 +157,7 @@ You can run FastMail alongside other MCP servers:
   "mcpServers": {
     "fastmail": {
       "command": "fastmail-cli",
-      "args": ["mcp", "serve"]
+      "args": ["mcp"]
     },
     "filesystem": {
       "command": "mcp-filesystem",
@@ -160,7 +169,7 @@ You can run FastMail alongside other MCP servers:
 
 ## Security Best Practices
 
-1. **Token Scope** - Create an API token with only the scopes you need
-2. **Review Operations** - Check tool calls before Claude executes them
-3. **Local Only** - The MCP server only runs locally via stdio
-4. **Restart Required** - Restart Claude Desktop to apply config changes
+1. **Token Scope** -- Create an API token with only the scopes you need
+2. **Review Operations** -- Check tool calls before Claude executes them
+3. **Local Only** -- The MCP server only runs locally via stdio
+4. **Restart Required** -- Restart Claude Desktop to apply config changes

@@ -2,17 +2,17 @@
 
 Manage FastMail authentication credentials.
 
-## Commands
+## Subcommands
 
-- [auth login](#auth-login) - Store API token
-- [auth logout](#auth-logout) - Remove stored credentials
-- [auth status](#auth-status) - Show authentication status
+- [auth login](#auth-login) -- Store API token
+- [auth logout](#auth-logout) -- Remove stored credentials
+- [auth status](#auth-status) -- Show authentication status
 
 ---
 
 ## auth login
 
-Store your FastMail API token for authentication.
+Store your FastMail API token for authentication. Uses system keychain on macOS with file fallback.
 
 ```bash
 fastmail-cli auth login [flags]
@@ -32,15 +32,12 @@ fastmail-cli auth login
 
 # Non-interactive login
 fastmail-cli auth login --token fmu1-xxxxxxxx
-
-# Use with custom config location
-fastmail-cli --config ~/.fastmail/config.yaml auth login
 ```
 
 ### Getting an API Token
 
 1. Log in to FastMail web interface
-2. Go to Settings → Privacy & Security → API tokens
+2. Go to **Settings** > **Privacy & Security** > **API tokens**
 3. Create a new token with appropriate permissions
 4. Copy the token and use it with `auth login`
 
@@ -54,23 +51,11 @@ Remove stored FastMail API token.
 fastmail-cli auth logout
 ```
 
-### Examples
-
-```bash
-# Remove stored credentials
-fastmail-cli auth logout
-
-# Verify logged out
-fastmail-cli auth status
-```
-
 ---
 
 ## auth status
 
-Validate your authentication against the FastMail API.
-
-This command checks not just whether a token is stored, but whether it's actually valid by making a request to the FastMail JMAP API.
+Validate your authentication against the FastMail API. This checks not just whether a token is stored, but whether it is actually valid by making a request to the FastMail JMAP API.
 
 ```bash
 fastmail-cli auth status
@@ -89,27 +74,13 @@ fastmail-cli auth status
 ### Output
 
 Text output:
+
 ```
 Authenticated as user@fastmail.com
 ```
-or
-```
-Not logged in
-```
-or
-```
-Token expired or revoked
-```
-or
-```
-Authentication failed
-```
-or
-```
-Cannot reach FastMail API: <error details>
-```
 
 JSON output (`--json`):
+
 ```json
 {
   "authenticated": true,
@@ -117,28 +88,9 @@ JSON output (`--json`):
 }
 ```
 
-When not authenticated:
-```json
-{
-  "authenticated": false,
-  "reason": "no_token"
-}
-```
-
-Authentication failures:
-```json
-{
-  "authenticated": false,
-  "reason": "auth_error"
-}
-```
-
 ### Examples
 
 ```bash
-# Check authentication status
-fastmail-cli auth status
-
 # Check status in scripts
 if fastmail-cli auth status; then
   echo "Ready to use"
@@ -147,13 +99,10 @@ else
 fi
 
 # JSON output for automation
-fastmail-cli auth status --json
-
-# Combine with other tools
 fastmail-cli auth status --json | jq -r '.username'
 ```
 
 ## See Also
 
 - [CLI Reference](index.md)
-- [mail](mail.md) - requires authentication
+- [mail](mail.md) -- requires authentication

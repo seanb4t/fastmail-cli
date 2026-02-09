@@ -1,48 +1,16 @@
 # CLI Reference
 
-Command-line reference for FastMail CLI.
+This page has moved. See the comprehensive CLI documentation:
 
-!!! note "Coming Soon"
-    Complete CLI reference documentation is in development.
-
-## Commands
-
-### Global Flags
-
-| Flag | Description |
-|------|-------------|
-| `--config` | Path to config file |
-| `--verbose` | Enable verbose output |
-| `--help` | Show help |
-
-### mail
-
-Mail management commands.
-
-```bash
-fastmail-cli mail [command]
-```
-
-### contacts
-
-Contact management commands.
-
-```bash
-fastmail-cli contacts [command]
-```
-
-### calendars
-
-Calendar management commands.
-
-```bash
-fastmail-cli calendars [command]
-```
-
-### mcp
-
-MCP server commands.
-
-```bash
-fastmail-cli mcp [command]
-```
+- [CLI Overview](../cli/index.md) -- Installation and global options
+- [auth](../cli/auth.md) -- Authentication
+- [mail](../cli/mail.md) -- Email operations
+- [mailbox](../cli/mailbox.md) -- Mailbox management
+- [contacts](../cli/contacts.md) -- Contacts via CardDAV
+- [calendar](../cli/calendar.md) -- Calendar and events via CalDAV
+- [masked-email](../cli/masked-email.md) -- Masked email addresses
+- [vacation](../cli/vacation.md) -- Vacation auto-reply
+- [identity](../cli/identity.md) -- Sender identities
+- [filter](../cli/filter.md) -- Sieve filter scripts
+- [export](../cli/export.md) -- Email export
+- [account](../cli/account.md) -- Account information

@@ -1,30 +1,11 @@
 # CLI Reference
 
-`fastmail-cli` is a command-line interface for interacting with FastMail via JMAP.
+`fastmail-cli` is a command-line interface for interacting with FastMail via JMAP, CardDAV, and CalDAV.
 
 ## Installation
 
 ```bash
 go install github.com/seanb4t/fastmail-cli/cmd/fastmail-cli@latest
-```
-
-## Quick Start
-
-```bash
-# Authenticate
-fastmail-cli auth login
-
-# List recent emails
-fastmail-cli mail list
-
-# Send an email
-fastmail-cli mail send --to alice@example.com --subject "Hello" --body "Hi there!"
-
-# List contacts
-fastmail-cli contacts list
-
-# Create a masked email
-fastmail-cli masked-email create --for-domain example.com
 ```
 
 ## Global Options
@@ -43,10 +24,16 @@ These flags are available for all commands:
 | Command | Description |
 |---------|-------------|
 | [auth](auth.md) | Manage authentication credentials |
-| [mail](mail.md) | Read, send, and manage email |
+| [mail](mail.md) | Read, send, search, and manage email |
+| [mailbox](mailbox.md) | Manage mailbox folders |
 | [contacts](contacts.md) | Manage contacts via CardDAV |
+| [calendar](calendar.md) | Manage calendars and events via CalDAV |
 | [masked-email](masked-email.md) | Manage masked email addresses |
+| [vacation](vacation.md) | Manage vacation/out-of-office auto-reply |
+| [identity](identity.md) | Manage sender identities |
+| [filter](filter.md) | Manage Sieve filter scripts |
 | [export](export.md) | Export emails to various formats |
+| [account](account.md) | View account information (quota) |
 
 ## Configuration
 
@@ -56,6 +43,7 @@ The CLI reads configuration from `~/.config/fastmail-cli/config.yaml` by default
 # Example config.yaml
 endpoint: https://api.fastmail.com/jmap/session
 carddav_endpoint: https://carddav.fastmail.com/dav/
+caldav_endpoint: https://caldav.fastmail.com/dav/
 carddav_username: username@fastmail.com
 ```
 
@@ -72,8 +60,11 @@ Environment variables:
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success |
-| 1 | Error (see stderr for details) |
+| 0 | Success / Authenticated |
+| 1 | Error or No token stored |
+| 2 | Token expired or revoked |
+| 3 | Cannot reach FastMail API |
+| 4 | Authentication failed |
 
 ## See Also
 
