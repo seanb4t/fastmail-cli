@@ -432,6 +432,23 @@ func TestUpdate_EmailReader_FlagAction(t *testing.T) {
 	assert.Equal(t, viewEmailReader, model.actionSource)
 }
 
+func TestUpdate_MailboxSelected_UsesLayoutConstrainedSize(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.width = 120
+	m.height = 40
+
+	mb := fastmail.Mailbox{ID: "mb1", Name: "Inbox"}
+	updated, _ := m.Update(mailboxSelectedMsg{mailbox: mb})
+	model := updated.(Model)
+
+	require.NotNil(t, model.emailList)
+	layout := model.panes.computeLayout(120, 40)
+	// Email list should use layout-constrained width, not full terminal width.
+	// The bubbles list Width reflects the constrained size.
+	assert.Equal(t, layout.mainWidth-2, model.emailList.list.Width())
+}
+
 func TestNew_HasPaneManager(t *testing.T) {
 	m := New(nil)
 	assert.Equal(t, PaneEmailList, m.panes.focus)

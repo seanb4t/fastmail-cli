@@ -201,7 +201,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case mailboxSelectedMsg:
 		el := newEmailListModel(msg.mailbox)
-		el.setSize(m.width, m.height)
+		layout := m.panes.computeLayout(m.width, m.height)
+		el.setSize(layout.mainWidth-2, layout.listHeight)
 		m.emailList = &el
 		m.view = viewEmailList
 		return m, m.fetchEmailsCmd(msg.mailbox.ID)
@@ -649,15 +650,18 @@ func (m Model) viewDashboard() string {
 		mainBorder = focusBorderColor
 	}
 
+	paneHeight := layout.listHeight + layout.previewHeight
 	sidebarStyle := lipgloss.NewStyle().
 		Width(layout.sidebarWidth - 2). // account for border
-		Height(layout.listHeight + layout.previewHeight).
+		Height(paneHeight).
+		MaxHeight(paneHeight).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(sidebarBorder)
 
 	mainStyle := lipgloss.NewStyle().
 		Width(layout.mainWidth - 2). // account for border
-		Height(layout.listHeight + layout.previewHeight).
+		Height(paneHeight).
+		MaxHeight(paneHeight).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(mainBorder)
 
