@@ -318,6 +318,7 @@ func (m Model) handleLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) { //n
 	}
 	switch msg.String() {
 	case "tab":
+		m.panes.hasPreview = m.emailReader != nil
 		m.panes.cycleFocus()
 		return m, nil, true
 	case "enter":

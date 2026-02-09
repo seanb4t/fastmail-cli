@@ -34,9 +34,10 @@ type paneLayout struct {
 
 // paneManager tracks focus, sidebar visibility, and split ratio.
 type paneManager struct {
-	focus    PaneID
-	sidebar  bool
-	splitPct int // percentage of main area for email list (30-80)
+	focus      PaneID
+	sidebar    bool
+	hasPreview bool // true when an email is selected and preview pane has content
+	splitPct   int  // percentage of main area for email list (30-80)
 }
 
 func newPaneManager() paneManager {
@@ -59,10 +60,15 @@ func (pm *paneManager) cycleFocus() {
 }
 
 func (pm *paneManager) visiblePanes() []PaneID {
+	var panes []PaneID
 	if pm.sidebar {
-		return []PaneID{PaneMailbox, PaneEmailList, PanePreview}
+		panes = append(panes, PaneMailbox)
 	}
-	return []PaneID{PaneEmailList, PanePreview}
+	panes = append(panes, PaneEmailList)
+	if pm.hasPreview {
+		panes = append(panes, PanePreview)
+	}
+	return panes
 }
 
 func (pm *paneManager) toggleSidebar() {

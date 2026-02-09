@@ -22,8 +22,7 @@ func TestIntegration_SelectMailbox_JK(t *testing.T) {
 		return bytes.Contains(bts, []byte("Inbox"))
 	}, teatest.WithDuration(5*time.Second))
 
-	// Focus cycles: PaneEmailList → PanePreview → PaneMailbox (2 tabs).
-	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	// Focus cycles: PaneEmailList → PaneMailbox (1 tab, preview skipped when no email selected).
 	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
 
 	// Move cursor down twice: Inbox → Drafts → Sent.
@@ -67,8 +66,7 @@ func TestIntegration_SelectMailbox_Arrows(t *testing.T) {
 		return bytes.Contains(bts, []byte("Inbox"))
 	}, teatest.WithDuration(5*time.Second))
 
-	// Focus cycles: PaneEmailList → PanePreview → PaneMailbox (2 tabs).
-	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	// Focus cycles: PaneEmailList → PaneMailbox (1 tab, preview skipped when no email selected).
 	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
 
 	// Move cursor down twice with arrow keys: Inbox → Drafts → Sent.

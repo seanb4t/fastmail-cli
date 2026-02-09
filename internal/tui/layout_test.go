@@ -22,6 +22,7 @@ func TestNewPaneManager(t *testing.T) {
 
 func TestPaneManager_CycleFocus(t *testing.T) {
 	pm := newPaneManager()
+	pm.hasPreview = true
 	pm.focus = PaneMailbox
 
 	pm.cycleFocus()
@@ -34,9 +35,21 @@ func TestPaneManager_CycleFocus(t *testing.T) {
 	assert.Equal(t, PaneMailbox, pm.focus)
 }
 
+func TestPaneManager_CycleFocus_SkipsPreviewWhenEmpty(t *testing.T) {
+	pm := newPaneManager()
+	pm.focus = PaneMailbox
+
+	pm.cycleFocus()
+	assert.Equal(t, PaneEmailList, pm.focus)
+
+	pm.cycleFocus()
+	assert.Equal(t, PaneMailbox, pm.focus, "should wrap back to mailbox, skipping empty preview")
+}
+
 func TestPaneManager_CycleFocus_SkipsSidebarWhenHidden(t *testing.T) {
 	pm := newPaneManager()
 	pm.sidebar = false
+	pm.hasPreview = true
 	pm.focus = PaneEmailList
 
 	pm.cycleFocus()
