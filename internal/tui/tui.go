@@ -410,6 +410,18 @@ func (m Model) updateEmailReader(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if er.reply || er.replyAll {
+		replyAll := er.replyAll
+		er.reply = false
+		er.replyAll = false
+		m.emailReader = &er
+		cm := newReplyComposeModel(er.email, replyAll)
+		cm.setSize(m.width, m.height)
+		m.composeView = &cm
+		m.view = viewCompose
+		return m, nil
+	}
+
 	if er.action != nil {
 		act := *er.action
 		er.action = nil
@@ -717,13 +729,20 @@ func (m Model) updateCompose(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if cm.canceled {
 		m.composeView = nil
-		m.view = viewEmailList
+		if cm.replyEmailID != "" && m.emailReader != nil {
+			m.view = viewEmailReader
+		} else {
+			m.view = viewEmailList
+		}
 		return m, nil
 	}
 
 	if cm.send {
 		cm.send = false
 		m.composeView = &cm
+		if cm.replyEmailID != "" {
+			return m, m.replyEmailCmd(cm)
+		}
 		return m, m.sendEmailCmd(cm)
 	}
 
@@ -731,7 +750,12 @@ func (m Model) updateCompose(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleEmailSent(_ emailSentMsg) (tea.Model, tea.Cmd) {
+	wasReply := m.composeView != nil && m.composeView.replyEmailID != ""
 	m.composeView = nil
+	if wasReply && m.emailReader != nil {
+		m.view = viewEmailReader
+		return m, m.emailReader.status.setStatus("Reply sent", false)
+	}
 	m.view = viewEmailList
 	if m.emailList != nil {
 		return m, m.emailList.status.setStatus("Email sent", false)
@@ -762,6 +786,25 @@ func (m Model) sendEmailCmd(cm composeModel) tea.Cmd {
 			return emailSendErrMsg{err: err}
 		}
 		return emailSentMsg{emailID: emailID}
+	}
+}
+
+func (m Model) replyEmailCmd(cm composeModel) tea.Cmd {
+	client := m.client
+	emailID := cm.replyEmailID
+	body := cm.body()
+	replyAll := cm.replyAll
+	return func() tea.Msg {
+		opts := fastmail.ReplyOptions{
+			EmailID:  emailID,
+			Body:     body,
+			ReplyAll: replyAll,
+		}
+		replyID, err := client.Mail().Reply(context.Background(), opts)
+		if err != nil {
+			return emailSendErrMsg{err: err}
+		}
+		return emailSentMsg{emailID: replyID}
 	}
 }
 

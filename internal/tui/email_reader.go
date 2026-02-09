@@ -38,6 +38,8 @@ type emailReaderModel struct {
 	action          *emailAction
 	showThread      bool
 	showAttachments bool
+	reply           bool
+	replyAll        bool
 }
 
 func newEmailReaderModel(email fastmail.Email) emailReaderModel {
@@ -130,6 +132,12 @@ func (m emailReaderModel) handleKey(msg tea.KeyMsg) (emailReaderModel, tea.Cmd) 
 		m.pendingDelete = true
 		return m, m.status.setStatus("Press x again to delete", false)
 	case "r":
+		m.reply = true
+		return m, nil
+	case "R":
+		m.replyAll = true
+		return m, nil
+	case ".":
 		m.action = &emailAction{kind: "toggleRead", email: m.email}
 		return m, nil
 	case "f":
@@ -164,7 +172,7 @@ func (m emailReaderModel) view() string {
 	if s := m.status.view(); s != "" {
 		bottom = s
 	} else {
-		bottom = readerHelpStyle.Render("  j/k scroll • d/u half-page • g/G top/bottom • a archive • x delete • r read • f flag • m move • A attachments • t thread • q back")
+		bottom = readerHelpStyle.Render("  j/k scroll • d/u half-page • g/G top/bottom • r reply • R reply-all • a archive • x delete • . read • f flag • m move • A att • t thread • q back")
 	}
 
 	return header + "\n" + m.viewport.View() + "\n" + bottom

@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/seanb4t/fastmail-cli/pkg/fastmail"
 )
 
 type composeField int
@@ -26,15 +29,18 @@ type emailSendErrMsg struct {
 }
 
 type composeModel struct {
-	toInput      textinput.Model
-	subjectInput textinput.Model
-	bodyInput    textarea.Model
-	activeField  composeField
-	canceled     bool
-	send         bool
-	width        int
-	height       int
-	err          string
+	toInput       textinput.Model
+	subjectInput  textinput.Model
+	bodyInput     textarea.Model
+	activeField   composeField
+	canceled      bool
+	send          bool
+	width         int
+	height        int
+	err           string
+	replyEmailID  string
+	replyAll      bool
+	quotedContext string
 }
 
 func newComposeModel() composeModel {
@@ -60,6 +66,69 @@ func newComposeModel() composeModel {
 		subjectInput: subj,
 		bodyInput:    body,
 		activeField:  fieldTo,
+	}
+}
+
+func newReplyComposeModel(email fastmail.Email, replyAll bool) composeModel {
+	toAddr := email.From.Email
+	if replyAll {
+		addrs := make([]string, 0, 1+len(email.To)+len(email.Cc))
+		addrs = append(addrs, email.From.Email)
+		for _, a := range email.To {
+			addrs = append(addrs, a.Email)
+		}
+		for _, a := range email.Cc {
+			addrs = append(addrs, a.Email)
+		}
+		toAddr = strings.Join(addrs, ", ")
+	}
+
+	subject := email.Subject
+	if !strings.HasPrefix(strings.ToLower(subject), "re:") {
+		subject = "Re: " + subject
+	}
+
+	from := email.From.String()
+	date := ""
+	if !email.ReceivedAt.IsZero() {
+		date = email.ReceivedAt.Format("Mon, 02 Jan 2006 15:04 MST")
+	}
+	quoted := fmt.Sprintf("\nOn %s, %s wrote:\n", date, from)
+	body := email.Body
+	if body == "" {
+		body = email.Preview
+	}
+	for _, line := range strings.Split(body, "\n") {
+		quoted += "> " + line + "\n"
+	}
+
+	to := textinput.New()
+	to.Placeholder = "recipient@example.com"
+	to.CharLimit = 256
+	to.Prompt = "  To:      "
+	to.SetValue(toAddr)
+
+	subj := textinput.New()
+	subj.Placeholder = "Subject"
+	subj.CharLimit = 256
+	subj.Prompt = "  Subject: "
+	subj.SetValue(subject)
+
+	bodyInput := textarea.New()
+	bodyInput.Placeholder = "Write your reply..."
+	bodyInput.CharLimit = 0
+	bodyInput.SetWidth(80)
+	bodyInput.SetHeight(10)
+	bodyInput.Focus()
+
+	return composeModel{
+		toInput:       to,
+		subjectInput:  subj,
+		bodyInput:     bodyInput,
+		activeField:   fieldBody,
+		replyEmailID:  email.ID,
+		replyAll:      replyAll,
+		quotedContext: quoted,
 	}
 }
 
@@ -124,6 +193,12 @@ func (m composeModel) handleSend() (composeModel, tea.Cmd) {
 
 func (m *composeModel) nextField() {
 	m.blurAll()
+	if m.replyEmailID != "" {
+		// Reply mode: stay in body
+		m.activeField = fieldBody
+		m.bodyInput.Focus()
+		return
+	}
 	switch m.activeField {
 	case fieldTo:
 		m.activeField = fieldSubject
@@ -139,6 +214,11 @@ func (m *composeModel) nextField() {
 
 func (m *composeModel) prevField() {
 	m.blurAll()
+	if m.replyEmailID != "" {
+		m.activeField = fieldBody
+		m.bodyInput.Focus()
+		return
+	}
 	switch m.activeField {
 	case fieldTo:
 		m.activeField = fieldBody
@@ -159,16 +239,25 @@ func (m *composeModel) blurAll() {
 }
 
 var (
-	composeLabelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	composeHelpStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	composeErrStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	composeLabelStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	composeHelpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	composeErrStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	composeQuotedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
 func (m composeModel) view() string {
 	var b strings.Builder
 
+	title := "New Email"
+	if m.replyEmailID != "" {
+		title = "Reply"
+		if m.replyAll {
+			title = "Reply All"
+		}
+	}
+
 	b.WriteString("\n")
-	b.WriteString(composeLabelStyle.Render("  New Email"))
+	b.WriteString(composeLabelStyle.Render("  " + title))
 	b.WriteString("\n\n")
 
 	b.WriteString(m.toInput.View())
@@ -177,6 +266,11 @@ func (m composeModel) view() string {
 	b.WriteString("\n\n")
 	b.WriteString("  " + m.bodyInput.View())
 	b.WriteString("\n")
+
+	if m.quotedContext != "" {
+		b.WriteString(composeQuotedStyle.Render("  " + strings.ReplaceAll(strings.TrimRight(m.quotedContext, "\n"), "\n", "\n  ")))
+		b.WriteString("\n")
+	}
 
 	if m.err != "" {
 		b.WriteString("\n")

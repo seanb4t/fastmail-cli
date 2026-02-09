@@ -175,7 +175,7 @@ func (m *emailListModel) handleKey(key string) (bool, tea.Cmd) {
 	case "c":
 		m.compose = true
 		return true, nil
-	case "a", "r", "m", "f":
+	case "a", ".", "m", "f":
 		return m.handleActionKey(key)
 	case "x":
 		return m.handleDeleteKey()
@@ -188,7 +188,7 @@ func (m *emailListModel) handleActionKey(key string) (bool, tea.Cmd) {
 	if !ok {
 		return true, nil
 	}
-	kindMap := map[string]string{"a": "archive", "r": "toggleRead", "m": "move", "f": "toggleFlag"}
+	kindMap := map[string]string{"a": "archive", ".": "toggleRead", "m": "move", "f": "toggleFlag"}
 	m.action = &emailAction{kind: kindMap[key], email: item.email}
 	return true, nil
 }
