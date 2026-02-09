@@ -236,6 +236,69 @@ func TestHandleActionDone_Unflagged(t *testing.T) {
 	assert.True(t, ei.email.IsRead())
 }
 
+func TestUpdate_QuestionMark_ShowsHelp(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	model := updated.(Model)
+
+	assert.True(t, model.helpOverlay)
+	assert.Nil(t, cmd)
+}
+
+func TestUpdate_HelpOverlay_DismissOnKeypress(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.helpOverlay = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	model := updated.(Model)
+
+	assert.False(t, model.helpOverlay)
+	assert.Nil(t, cmd)
+}
+
+func TestUpdate_HelpOverlay_CtrlCStillQuits(t *testing.T) {
+	m := New(nil)
+	m.helpOverlay = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	model := updated.(Model)
+
+	assert.True(t, model.quit)
+	assert.NotNil(t, cmd)
+}
+
+func TestView_HelpOverlay(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.helpOverlay = true
+	m.view = viewMailboxList
+
+	v := m.View()
+
+	assert.Contains(t, v, "Mailbox List")
+	assert.Contains(t, v, "Open mailbox")
+}
+
+func TestUpdate_QuestionMark_IgnoredInEmailReader(t *testing.T) {
+	// In the email reader, '?' should still show help (not filtering)
+	m := New(nil)
+	m.connecting = false
+	m.view = viewEmailReader
+	email := fastmail.Email{ID: "e1", Subject: "Test"}
+	er := newEmailReaderModel(email)
+	er.setSize(80, 24)
+	m.emailReader = &er
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	model := updated.(Model)
+
+	assert.True(t, model.helpOverlay)
+	assert.Nil(t, cmd)
+}
+
 func TestUpdate_EmailReader_FlagAction(t *testing.T) {
 	m := New(nil)
 	m.connecting = false

@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -40,6 +41,7 @@ type Model struct {
 	err          error
 	quit         bool
 	connecting   bool
+	helpOverlay  bool
 }
 
 // New creates a new TUI model with the given client.
@@ -119,16 +121,8 @@ func (m Model) isFiltering() bool {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			m.quit = true
-			return m, tea.Quit
-		case "q":
-			// In reader/move picker views, q means "go back" — let the view handle it
-			if m.view != viewEmailReader && m.view != viewMovePicker && !m.isFiltering() {
-				m.quit = true
-				return m, tea.Quit
-			}
+		if result, cmd, handled := m.handleGlobalKeys(msg); handled {
+			return result, cmd
 		}
 
 	case tea.WindowSizeMsg:
@@ -185,6 +179,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Delegate to current view
 	return m.updateView(msg)
+}
+
+// handleGlobalKeys processes top-level keybindings before view delegation.
+// Returns (model, cmd, true) if the key was handled.
+func (m Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	if msg.String() == "ctrl+c" {
+		m.quit = true
+		return m, tea.Quit, true
+	}
+	// Dismiss help overlay on any other keypress
+	if m.helpOverlay {
+		m.helpOverlay = false
+		return m, nil, true
+	}
+	switch msg.String() {
+	case "q":
+		// In reader/move picker views, q means "go back" — let the view handle it
+		if m.view != viewEmailReader && m.view != viewMovePicker && !m.isFiltering() {
+			m.quit = true
+			return m, tea.Quit, true
+		}
+	case "?":
+		if !m.isFiltering() {
+			m.helpOverlay = true
+			return m, nil, true
+		}
+	}
+	return m, nil, false
 }
 
 func (m Model) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -290,6 +312,11 @@ func (m Model) View() string {
 
 	if m.connecting {
 		return "\n  Connecting to Fastmail..."
+	}
+
+	if m.helpOverlay {
+		content := helpForView(m.view)
+		return "\n  " + strings.ReplaceAll(content, "\n", "\n  ")
 	}
 
 	switch m.view {
