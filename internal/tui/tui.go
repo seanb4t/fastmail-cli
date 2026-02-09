@@ -19,6 +19,7 @@ const (
 	viewEmailList
 	viewEmailReader
 	viewMovePicker
+	viewThreadView
 )
 
 // errMsg wraps errors from async commands.
@@ -35,6 +36,7 @@ type Model struct {
 	emailList    *emailListModel
 	emailReader  *emailReaderModel
 	movePicker   *movePickerModel
+	threadView   *threadViewModel
 	actionSource view // which view initiated the current action
 	width        int
 	height       int
@@ -102,6 +104,17 @@ func (m Model) fetchEmailBodyCmd(emailID string) tea.Cmd {
 	}
 }
 
+func (m Model) fetchThreadCmd(threadID string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		emails, err := client.Mail().GetThread(context.Background(), threadID)
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return threadLoadedMsg{emails: emails}
+	}
+}
+
 func (m Model) searchEmailsCmd(query string) tea.Cmd {
 	client := m.client
 	return func() tea.Msg {
@@ -124,6 +137,8 @@ func (m Model) isFiltering() bool {
 		return false
 	case viewMovePicker:
 		return m.movePicker != nil && m.movePicker.list.SettingFilter()
+	case viewThreadView:
+		return false
 	}
 	return false
 }
@@ -149,6 +164,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.movePicker != nil {
 			m.movePicker.setSize(msg.Width, msg.Height)
 		}
+		if m.threadView != nil {
+			m.threadView.setSize(msg.Width, msg.Height)
+		}
+
+	case threadLoadedMsg:
+		if m.threadView != nil {
+			tv := *m.threadView
+			tv, _ = tv.update(msg)
+			m.threadView = &tv
+		}
+		return m, nil
 
 	case emailBodyLoadedMsg:
 		if m.emailReader != nil {
@@ -206,8 +232,8 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "q":
-		// In reader/move picker views, q means "go back" — let the view handle it
-		if m.view != viewEmailReader && m.view != viewMovePicker && !m.isFiltering() {
+		// In reader/move picker/thread views, q means "go back" — let the view handle it
+		if m.view != viewEmailReader && m.view != viewMovePicker && m.view != viewThreadView && !m.isFiltering() {
 			m.quit = true
 			return m, tea.Quit, true
 		}
@@ -230,6 +256,8 @@ func (m Model) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateEmailReader(msg)
 	case viewMovePicker:
 		return m.updateMovePicker(msg)
+	case viewThreadView:
+		return m.updateThreadView(msg)
 	}
 	return m, nil
 }
@@ -308,11 +336,40 @@ func (m Model) updateEmailReader(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if er.showThread {
+		er.showThread = false
+		m.emailReader = &er
+		tv := newThreadViewModel(er.email)
+		tv.setSize(m.width, m.height)
+		m.threadView = &tv
+		m.view = viewThreadView
+		return m, m.fetchThreadCmd(er.email.ThreadID)
+	}
+
 	if er.action != nil {
 		act := *er.action
 		er.action = nil
 		m.emailReader = &er
 		return m.dispatchAction(act, viewEmailReader)
+	}
+
+	return m, cmd
+}
+
+func (m Model) updateThreadView(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.threadView == nil {
+		return m, nil
+	}
+
+	tv := *m.threadView
+	var cmd tea.Cmd
+	tv, cmd = tv.update(msg)
+	m.threadView = &tv
+
+	if tv.goBack {
+		m.threadView = nil
+		m.view = viewEmailReader
+		return m, nil
 	}
 
 	return m, cmd
@@ -351,6 +408,10 @@ func (m Model) View() string {
 	case viewMovePicker:
 		if m.movePicker != nil {
 			return m.movePicker.view()
+		}
+	case viewThreadView:
+		if m.threadView != nil {
+			return m.threadView.view()
 		}
 	}
 
@@ -425,7 +486,7 @@ func (m Model) handleActionDone(msg emailActionDoneMsg) (tea.Model, tea.Cmd) {
 		if m.emailReader != nil {
 			cmd = m.emailReader.status.setStatus(msg.action, false)
 		}
-	case viewMailboxList, viewMovePicker:
+	case viewMailboxList, viewMovePicker, viewThreadView:
 		// No status to show on these views
 	}
 
@@ -446,7 +507,7 @@ func (m Model) handleActionErr(msg emailActionErrMsg) (tea.Model, tea.Cmd) {
 		if m.emailReader != nil {
 			cmd = m.emailReader.status.setStatus(errText, true)
 		}
-	case viewMailboxList, viewMovePicker:
+	case viewMailboxList, viewMovePicker, viewThreadView:
 		// Actions are not initiated from these views
 	}
 

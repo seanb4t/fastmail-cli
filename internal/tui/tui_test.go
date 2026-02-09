@@ -282,6 +282,25 @@ func TestView_HelpOverlay(t *testing.T) {
 	assert.Contains(t, v, "Open mailbox")
 }
 
+func TestUpdate_ThreadView_GoBack(t *testing.T) {
+	m := New(nil)
+	m.connecting = false
+	m.view = viewThreadView
+
+	email := fastmail.Email{ID: "e1", Subject: "Test", ThreadID: "t1"}
+	tv := newThreadViewModel(email)
+	tv.setSize(80, 24)
+	tv.loading = false
+	m.threadView = &tv
+
+	// Press esc to go back to email reader
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	model := updated.(Model)
+
+	assert.Equal(t, viewEmailReader, model.view)
+	assert.Nil(t, model.threadView)
+}
+
 func TestUpdate_QuestionMark_IgnoredInEmailReader(t *testing.T) {
 	// In the email reader, '?' should still show help (not filtering)
 	m := New(nil)

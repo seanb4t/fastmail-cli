@@ -36,6 +36,7 @@ type emailReaderModel struct {
 	status        statusModel
 	pendingDelete bool
 	action        *emailAction
+	showThread    bool
 }
 
 func newEmailReaderModel(email fastmail.Email) emailReaderModel {
@@ -123,6 +124,11 @@ func (m emailReaderModel) update(msg tea.Msg) (emailReaderModel, tea.Cmd) {
 		case "m":
 			m.action = &emailAction{kind: "move", email: m.email}
 			return m, nil
+		case "t":
+			if m.email.ThreadID != "" {
+				m.showThread = true
+			}
+			return m, nil
 		}
 	}
 
@@ -146,7 +152,7 @@ func (m emailReaderModel) view() string {
 	if s := m.status.view(); s != "" {
 		bottom = s
 	} else {
-		bottom = readerHelpStyle.Render("  j/k scroll • d/u half-page • g/G top/bottom • a archive • x delete • r read • f flag • m move • q back")
+		bottom = readerHelpStyle.Render("  j/k scroll • d/u half-page • g/G top/bottom • a archive • x delete • r read • f flag • m move • t thread • q back")
 	}
 
 	return header + "\n" + m.viewport.View() + "\n" + bottom
