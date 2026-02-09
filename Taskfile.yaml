@@ -82,49 +82,6 @@ tasks:
       - task: test
       - task: build
 
-  # Integration tests
-  test:integration:
-    desc: Run teatest integration tests
-    cmds:
-      - go test -race -run 'TestIntegration|TestBDD_Integration' ./internal/tui/ -v
-
-  test:golden:update:
-    desc: Regenerate golden files for integration tests
-    cmds:
-      - go test -run 'TestIntegration|TestBDD_Integration' ./internal/tui/ -v -update
-
-  # VHS screen recordings
-  vhs:mock:start:
-    desc: Start WireMock Docker container for VHS
-    cmds:
-      - docker run -d --name fm-mock -p 8080:8080 -v $(pwd)/docs/vhs/wiremock:/home/wiremock wiremock/wiremock:latest
-
-  vhs:mock:stop:
-    desc: Stop WireMock Docker container
-    cmds:
-      - docker rm -f fm-mock 2>/dev/null || true
-
-  vhs:
-    desc: Generate all VHS recordings
-    deps: [build]
-    cmds:
-      - vhs docs/vhs/dashboard.tape
-      - vhs docs/vhs/compose.tape
-      - vhs docs/vhs/navigation.tape
-
-  vhs:check:
-    desc: Diff VHS golden files against expected baselines
-    cmds:
-      - diff docs/vhs/testdata/dashboard.ascii docs/vhs/expected/dashboard.ascii
-      - diff docs/vhs/testdata/compose.ascii docs/vhs/expected/compose.ascii
-      - diff docs/vhs/testdata/navigation.ascii docs/vhs/expected/navigation.ascii
-
-  vhs:update:
-    desc: Copy VHS testdata to expected baselines
-    cmds:
-      - mkdir -p docs/vhs/expected
-      - cp docs/vhs/testdata/*.ascii docs/vhs/expected/
-
   # Git hooks
   hooks:install:
     desc: Install git hooks via lefthook

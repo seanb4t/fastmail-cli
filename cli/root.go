@@ -2,8 +2,6 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
-
-	"github.com/seanb4t/fastmail-cli/internal/tui"
 )
 
 // Version is set at build time via ldflags.
@@ -27,14 +25,10 @@ func NewRootCommand() *RootCommand {
 
 	root.cmd = &cobra.Command{
 		Use:   "fastmail-cli",
-		Short: "CLI and TUI for FastMail",
-		Long:  "A command-line and interactive terminal interface for FastMail via JMAP, CardDAV, and CalDAV.",
+		Short: "CLI for FastMail",
+		Long:  "A command-line interface for FastMail via JMAP, CardDAV, and CalDAV.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, err := createClient()
-			if err != nil {
-				return cmd.Help()
-			}
-			return tui.Run(client)
+			return cmd.Help()
 		},
 		SilenceUsage: true,
 	}
@@ -61,7 +55,6 @@ func NewRootCommand() *RootCommand {
 	root.cmd.AddCommand(newExportCommand())
 	root.cmd.AddCommand(newMCPCommand())
 	root.cmd.AddCommand(newCompletionCommand())
-	root.cmd.AddCommand(newTUICommand())
 
 	return root
 }
