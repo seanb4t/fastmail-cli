@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/cucumber/godog"
 
@@ -18,12 +19,19 @@ func registerMCPSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a connected MCP tools config$`, aConnectedMCPToolsConfig)
 
 	// When steps
+	sc.Step(`^I call the "([^"]*)" tool$`, iCallToolNoArgs)
 	sc.Step(`^I call the "([^"]*)" tool with:$`, iCallToolWith)
 	sc.Step(`^I call the "([^"]*)" tool with keywords:$`, iCallToolWithKeywords)
 
 	// Then steps
 	sc.Step(`^the tool call should succeed$`, theToolCallShouldSucceed)
+	sc.Step(`^the tool call should fail$`, theToolCallShouldFail)
+	sc.Step(`^the tool error should contain "([^"]*)"$`, theToolErrorShouldContain)
 	sc.Step(`^the tool result should contain (\d+) items?$`, theToolResultShouldContainNItems)
+	sc.Step(`^the tool result field "([^"]*)" should equal "([^"]*)"$`, theToolResultFieldShouldEqual)
+	sc.Step(`^the tool result field "([^"]*)" should be true$`, theToolResultFieldShouldBeTrue)
+	sc.Step(`^the tool result field "([^"]*)" should be false$`, theToolResultFieldShouldBeFalse)
+	sc.Step(`^the tool result item (\d+) field "([^"]*)" should equal "([^"]*)"$`, theToolResultItemFieldShouldEqual)
 }
 
 func aConnectedMCPToolsConfig(ctx context.Context) (context.Context, error) {
@@ -31,6 +39,22 @@ func aConnectedMCPToolsConfig(ctx context.Context) (context.Context, error) {
 	if w == nil {
 		return ctx, fmt.Errorf("world not initialized")
 	}
+	return ctx, nil
+}
+
+func iCallToolNoArgs(ctx context.Context, toolName string) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	client := fastmail.NewClient(w.SessionServer.URL, "test-token")
+
+	cfg := mcp.ToolsConfig{Client: client}
+	handler := resolveToolHandler(toolName, cfg)
+	if handler == nil {
+		return ctx, fmt.Errorf("unknown tool: %s", toolName)
+	}
+
+	result, err := handler(ctx, map[string]any{})
+	w.ToolResult = result
+	w.ToolError = err
 	return ctx, nil
 }
 
@@ -91,6 +115,25 @@ func theToolCallShouldSucceed(ctx context.Context) error {
 	return nil
 }
 
+func theToolCallShouldFail(ctx context.Context) error {
+	w := WorldFromContext(ctx)
+	if w.ToolError == nil {
+		return fmt.Errorf("expected tool call to fail, but it succeeded")
+	}
+	return nil
+}
+
+func theToolErrorShouldContain(ctx context.Context, substring string) error {
+	w := WorldFromContext(ctx)
+	if w.ToolError == nil {
+		return fmt.Errorf("expected an error containing %q, but no error occurred", substring)
+	}
+	if !strings.Contains(w.ToolError.Error(), substring) {
+		return fmt.Errorf("expected error containing %q, got: %s", substring, w.ToolError.Error())
+	}
+	return nil
+}
+
 func theToolResultShouldContainNItems(ctx context.Context, count int) error {
 	w := WorldFromContext(ctx)
 	if w.ToolError != nil {
@@ -102,6 +145,10 @@ func theToolResultShouldContainNItems(ctx context.Context, count int) error {
 		if len(result) != count {
 			return fmt.Errorf("expected %d items, got %d", count, len(result))
 		}
+	case []map[string]any:
+		if len(result) != count {
+			return fmt.Errorf("expected %d items, got %d", count, len(result))
+		}
 	case []*mcp.Email:
 		if len(result) != count {
 			return fmt.Errorf("expected %d items, got %d", count, len(result))
@@ -110,6 +157,105 @@ func theToolResultShouldContainNItems(ctx context.Context, count int) error {
 		return fmt.Errorf("unexpected result type: %T", w.ToolResult)
 	}
 	return nil
+}
+
+func theToolResultFieldShouldEqual(ctx context.Context, field, expected string) error {
+	w := WorldFromContext(ctx)
+	result, ok := w.ToolResult.(map[string]any)
+	if !ok {
+		return fmt.Errorf("tool result is not a map, got %T", w.ToolResult)
+	}
+	val, exists := result[field]
+	if !exists {
+		return fmt.Errorf("field %q not found in tool result (keys: %v)", field, mapKeys(result))
+	}
+	actual := fmt.Sprintf("%v", val)
+	if actual != expected {
+		return fmt.Errorf("field %q: expected %q, got %q", field, expected, actual)
+	}
+	return nil
+}
+
+func theToolResultFieldShouldBeTrue(ctx context.Context, field string) error {
+	w := WorldFromContext(ctx)
+	result, ok := w.ToolResult.(map[string]any)
+	if !ok {
+		return fmt.Errorf("tool result is not a map, got %T", w.ToolResult)
+	}
+	val, exists := result[field]
+	if !exists {
+		return fmt.Errorf("field %q not found in tool result", field)
+	}
+	b, ok := val.(bool)
+	if !ok || !b {
+		return fmt.Errorf("field %q: expected true, got %v", field, val)
+	}
+	return nil
+}
+
+func theToolResultFieldShouldBeFalse(ctx context.Context, field string) error {
+	w := WorldFromContext(ctx)
+	result, ok := w.ToolResult.(map[string]any)
+	if !ok {
+		return fmt.Errorf("tool result is not a map, got %T", w.ToolResult)
+	}
+	val, exists := result[field]
+	if !exists {
+		return fmt.Errorf("field %q not found in tool result", field)
+	}
+	b, ok := val.(bool)
+	if !ok || b {
+		return fmt.Errorf("field %q: expected false, got %v", field, val)
+	}
+	return nil
+}
+
+func theToolResultItemFieldShouldEqual(ctx context.Context, index int, field, expected string) error {
+	w := WorldFromContext(ctx)
+	items, err := toolResultAsSlice(w.ToolResult)
+	if err != nil {
+		return err
+	}
+	if index < 1 || index > len(items) {
+		return fmt.Errorf("item index %d out of range (have %d items)", index, len(items))
+	}
+	item := items[index-1]
+	val, exists := item[field]
+	if !exists {
+		return fmt.Errorf("field %q not found in item %d (keys: %v)", field, index, mapKeys(item))
+	}
+	actual := fmt.Sprintf("%v", val)
+	if actual != expected {
+		return fmt.Errorf("item %d field %q: expected %q, got %q", index, field, expected, actual)
+	}
+	return nil
+}
+
+func toolResultAsSlice(result any) ([]map[string]any, error) {
+	switch r := result.(type) {
+	case []map[string]any:
+		return r, nil
+	case []any:
+		items := make([]map[string]any, len(r))
+		for i, item := range r {
+			m, ok := item.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("item %d is not a map, got %T", i, item)
+			}
+			items[i] = m
+		}
+		return items, nil
+	default:
+		return nil, fmt.Errorf("result is not a slice, got %T", result)
+	}
+}
+
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // resolveToolHandler creates a temporary MCP server, registers tools, and extracts the handler.
