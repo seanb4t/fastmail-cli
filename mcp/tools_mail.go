@@ -24,8 +24,12 @@ type ToolsConfig struct {
 // CalendarAdapter wraps calendar operations for MCP tools.
 // This is needed because CalendarService requires a dav.Client.
 type CalendarAdapter struct {
-	ListEventsFunc  func(ctx context.Context, calendarID string, start, end time.Time) ([]fastmail.Event, error)
-	CreateEventFunc func(ctx context.Context, event *fastmail.Event) error
+	ListCalendarsFunc func(ctx context.Context) ([]fastmail.Calendar, error)
+	ListEventsFunc    func(ctx context.Context, calendarID string, start, end time.Time) ([]fastmail.Event, error)
+	GetEventFunc      func(ctx context.Context, eventID string) (*fastmail.Event, error)
+	CreateEventFunc   func(ctx context.Context, event *fastmail.Event) error
+	UpdateEventFunc   func(ctx context.Context, event *fastmail.Event) error
+	DeleteEventFunc   func(ctx context.Context, eventID string) error
 }
 
 // RegisterMailTools registers all mail-related tools on the server.
@@ -836,6 +840,14 @@ func registerContactTools(s *Server, cfg ToolsConfig) {
 			WithRequired("id"),
 		makeContactsDeleteHandler(cfg),
 	)
+
+	// contacts_search - Search contacts
+	s.RegisterTool(
+		NewTool("contacts_search", "Search contacts by name or email").
+			WithProperty("query", "string", "Search query text").
+			WithRequired("query"),
+		makeContactsSearchHandler(cfg),
+	)
 }
 
 func makeContactsListHandler(cfg ToolsConfig) ToolHandler {
@@ -980,9 +992,44 @@ func makeContactsDeleteHandler(cfg ToolsConfig) ToolHandler {
 	}
 }
 
+func makeContactsSearchHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		if cfg.Contacts == nil {
+			return nil, oops.Errorf("contacts client not configured")
+		}
+
+		query := getStringArg(args, "query", "")
+		if query == "" {
+			return nil, oops.Errorf("query is required")
+		}
+
+		contacts, err := cfg.Contacts.Search(ctx, query)
+		if err != nil {
+			return nil, oops.Wrapf(err, "searching contacts")
+		}
+
+		result := make([]map[string]any, len(contacts))
+		for i, c := range contacts {
+			result[i] = map[string]any{
+				"id":    c.ID,
+				"name":  c.Name,
+				"email": c.Email,
+				"phone": c.Phone,
+			}
+		}
+		return result, nil
+	}
+}
+
 // Calendar tools
 
 func registerCalendarTools(s *Server, cfg ToolsConfig) {
+	// calendar_list - List available calendars
+	s.RegisterTool(
+		NewTool("calendar_list", "List all available calendars"),
+		makeCalendarListHandler(cfg),
+	)
+
 	// calendar_events - List calendar events
 	s.RegisterTool(
 		NewTool("calendar_events", "List calendar events within a date range").
@@ -1006,6 +1053,62 @@ func registerCalendarTools(s *Server, cfg ToolsConfig) {
 			WithRequired("calendar_id", "summary", "start", "end"),
 		makeCalendarCreateHandler(cfg),
 	)
+
+	// calendar_get - Get a single event by ID
+	s.RegisterTool(
+		NewTool("calendar_get", "Get a single calendar event by ID").
+			WithProperty("id", "string", "The event ID").
+			WithRequired("id"),
+		makeCalendarGetHandler(cfg),
+	)
+
+	// calendar_update - Update a calendar event
+	s.RegisterTool(
+		NewTool("calendar_update", "Update an existing calendar event").
+			WithProperty("id", "string", "The event ID").
+			WithProperty("calendar_id", "string", "Calendar ID").
+			WithProperty("summary", "string", "Event title/summary (optional)").
+			WithProperty("description", "string", "Event description (optional)").
+			WithProperty("location", "string", "Event location (optional)").
+			WithProperty("start", "string", "Start date/time in RFC3339 format (optional)").
+			WithProperty("end", "string", "End date/time in RFC3339 format (optional)").
+			WithRequired("id"),
+		makeCalendarUpdateHandler(cfg),
+	)
+
+	// calendar_delete - Delete a calendar event
+	s.RegisterTool(
+		NewTool("calendar_delete", "Delete a calendar event by ID").
+			WithProperty("id", "string", "The event ID").
+			WithRequired("id"),
+		makeCalendarDeleteHandler(cfg),
+	)
+}
+
+func makeCalendarListHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, _ map[string]any) (any, error) {
+		if cfg.Calendar == nil || cfg.Calendar.ListCalendarsFunc == nil {
+			return nil, oops.Errorf("calendar not configured")
+		}
+
+		calendars, err := cfg.Calendar.ListCalendarsFunc(ctx)
+		if err != nil {
+			return nil, oops.Wrapf(err, "listing calendars")
+		}
+
+		result := make([]map[string]any, len(calendars))
+		for i, c := range calendars {
+			result[i] = map[string]any{
+				"id":          c.ID,
+				"name":        c.Name,
+				"color":       c.Color,
+				"description": c.Description,
+				"is_default":  c.IsDefaultCalendar,
+				"read_only":   c.ReadOnly,
+			}
+		}
+		return result, nil
+	}
 }
 
 func makeCalendarEventsHandler(cfg ToolsConfig) ToolHandler {
@@ -1096,6 +1199,110 @@ func makeCalendarCreateHandler(cfg ToolsConfig) ToolHandler {
 			"start":       event.Start.Format(time.RFC3339),
 			"end":         event.End.Format(time.RFC3339),
 			"status":      "created",
+		}, nil
+	}
+}
+
+func makeCalendarGetHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		if cfg.Calendar == nil || cfg.Calendar.GetEventFunc == nil {
+			return nil, oops.Errorf("calendar not configured")
+		}
+
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		event, err := cfg.Calendar.GetEventFunc(ctx, id)
+		if err != nil {
+			return nil, oops.Wrapf(err, "getting event")
+		}
+
+		return convertEventToMCP(event), nil
+	}
+}
+
+func makeCalendarUpdateHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		if cfg.Calendar == nil || cfg.Calendar.UpdateEventFunc == nil {
+			return nil, oops.Errorf("calendar not configured")
+		}
+
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		// Fetch existing event to merge updates
+		if cfg.Calendar.GetEventFunc == nil {
+			return nil, oops.Errorf("calendar get not configured")
+		}
+		event, err := cfg.Calendar.GetEventFunc(ctx, id)
+		if err != nil {
+			return nil, oops.Wrapf(err, "getting event for update")
+		}
+
+		if calID := getStringArg(args, "calendar_id", ""); calID != "" {
+			event.CalendarID = calID
+		}
+		if summary := getStringArg(args, "summary", ""); summary != "" {
+			event.Summary = summary
+		}
+		if desc := getStringArg(args, "description", ""); desc != "" {
+			event.Description = desc
+		}
+		if loc := getStringArg(args, "location", ""); loc != "" {
+			event.Location = loc
+		}
+		if startStr := getStringArg(args, "start", ""); startStr != "" {
+			start, err := time.Parse(time.RFC3339, startStr)
+			if err != nil {
+				return nil, oops.Wrapf(err, "parsing start time")
+			}
+			event.Start = start
+		}
+		if endStr := getStringArg(args, "end", ""); endStr != "" {
+			end, err := time.Parse(time.RFC3339, endStr)
+			if err != nil {
+				return nil, oops.Wrapf(err, "parsing end time")
+			}
+			event.End = end
+		}
+
+		if err := cfg.Calendar.UpdateEventFunc(ctx, event); err != nil {
+			return nil, oops.Wrapf(err, "updating event")
+		}
+
+		return map[string]any{
+			"id":          event.ID,
+			"calendar_id": event.CalendarID,
+			"summary":     event.Summary,
+			"start":       event.Start.Format(time.RFC3339),
+			"end":         event.End.Format(time.RFC3339),
+			"status":      "updated",
+		}, nil
+	}
+}
+
+func makeCalendarDeleteHandler(cfg ToolsConfig) ToolHandler {
+	return func(ctx context.Context, args map[string]any) (any, error) {
+		if cfg.Calendar == nil || cfg.Calendar.DeleteEventFunc == nil {
+			return nil, oops.Errorf("calendar not configured")
+		}
+
+		id := getStringArg(args, "id", "")
+		if id == "" {
+			return nil, oops.Errorf("id is required")
+		}
+
+		if err := cfg.Calendar.DeleteEventFunc(ctx, id); err != nil {
+			return nil, oops.Wrapf(err, "deleting event")
+		}
+
+		return map[string]any{
+			"id":     id,
+			"status": "deleted",
 		}, nil
 	}
 }

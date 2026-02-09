@@ -143,6 +143,18 @@ func (r *ResourceRegistry) registerDefaults() {
 		r.handleContacts,
 	)
 
+	// fastmail://contact/{id} - Single contact (template)
+	r.registerTemplate(
+		ResourceTemplate{
+			URITemplate: "fastmail://contact/{id}",
+			Name:        "Contact",
+			Description: "Details of a specific contact",
+			MimeType:    "text/plain",
+		},
+		regexp.MustCompile(`^fastmail://contact/(?P<id>[^/]+)$`),
+		r.handleContact,
+	)
+
 	// fastmail://calendar/today - Today's events
 	r.register(
 		*NewResource("fastmail://calendar/today", "Today's Events").
@@ -217,12 +229,25 @@ func (r *ResourceRegistry) handleMail(ctx context.Context, params map[string]str
 
 // handleContacts returns the contact list.
 func (r *ResourceRegistry) handleContacts(_ context.Context, _ map[string]string) (*ResourceContent, error) {
-	// Contacts require CardDAV client which may not be configured via JMAP
-	// Return informative message if not available
 	return &ResourceContent{
 		URI:      "fastmail://contacts",
 		MimeType: "text/plain",
 		Text:     "Contacts access requires CardDAV configuration. Use the contacts_list tool instead.",
+	}, nil
+}
+
+// handleContact returns a single contact by ID.
+func (r *ResourceRegistry) handleContact(_ context.Context, params map[string]string) (*ResourceContent, error) {
+	id := params["id"]
+	if id == "" {
+		return nil, oops.Errorf("contact ID required")
+	}
+
+	// Contacts require CardDAV client — direct the agent to use the tool instead
+	return &ResourceContent{
+		URI:      fmt.Sprintf("fastmail://contact/%s", id),
+		MimeType: "text/plain",
+		Text:     fmt.Sprintf("Contact lookup requires CardDAV configuration. Use the contacts_get tool with id=%q instead.", id),
 	}, nil
 }
 
