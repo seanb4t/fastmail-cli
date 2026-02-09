@@ -44,3 +44,29 @@ func TestKeyBarModel_AlwaysShowsGlobalKeys(t *testing.T) {
 		assert.Contains(t, result, "q", "pane=%d should contain q", pane)
 	}
 }
+
+func TestKeyBar_ViewForPaneWidth_FullWidth(t *testing.T) {
+	theme := DarkTheme()
+	kb := newKeyBarModel(theme)
+	v := kb.viewForPaneWidth(PaneEmailList, 120)
+	assert.Contains(t, v, "archive")
+	assert.Contains(t, v, "quit")
+}
+
+func TestKeyBar_ViewForPaneWidth_NarrowAbbreviates(t *testing.T) {
+	theme := DarkTheme()
+	kb := newKeyBarModel(theme)
+	// Narrow width should drop descriptions for context bindings
+	v := kb.viewForPaneWidth(PaneEmailList, 40)
+	// Should still contain global bindings
+	assert.Contains(t, v, "q")
+	assert.Contains(t, v, "?")
+}
+
+func TestKeyBar_ViewForPaneWidth_VeryNarrowDropsContext(t *testing.T) {
+	theme := DarkTheme()
+	kb := newKeyBarModel(theme)
+	v := kb.viewForPaneWidth(PaneEmailList, 20)
+	// Should at minimum show global key-only bindings
+	assert.Contains(t, v, "q")
+}

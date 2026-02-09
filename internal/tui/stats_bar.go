@@ -71,6 +71,19 @@ func (sb statsBarModel) view(width int) string {
 		)
 	}
 
-	content := strings.Join(parts, labelStyle.Render("  │  "))
+	sep := labelStyle.Render("  │  ")
+	leftContent := strings.Join(parts, sep)
+	brand := valueStyle.Render("Fastmail CLI")
+
+	leftW := lipgloss.Width(leftContent)
+	brandW := lipgloss.Width(brand)
+	availWidth := width - 2 // account for Padding(0, 1)
+	gap := availWidth - leftW - brandW
+	var content string
+	if gap >= 2 {
+		content = leftContent + strings.Repeat(" ", gap) + brand
+	} else {
+		content = leftContent
+	}
 	return barStyle.Render(content)
 }

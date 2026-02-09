@@ -61,3 +61,17 @@ func TestStatsBar_QuotaColor_High(t *testing.T) {
 	color := sb.quotaColor(92.0)
 	assert.Equal(t, sb.theme.QuotaHigh, color)
 }
+
+func TestStatsBar_ShowsBrand(t *testing.T) {
+	theme := DarkTheme()
+	sb := newStatsBarModel(theme)
+	v := sb.view(120)
+	assert.Contains(t, v, "Fastmail CLI")
+}
+
+func TestStatsBar_NarrowHidesBrand(t *testing.T) {
+	theme := DarkTheme()
+	sb := newStatsBarModel(theme)
+	v := sb.view(30)
+	assert.NotContains(t, v, "Fastmail CLI")
+}

@@ -32,6 +32,57 @@ func (kb keyBarModel) viewForPane(pane PaneID) string {
 	return kb.render(bindings)
 }
 
+func (kb keyBarModel) viewForPaneWidth(pane PaneID, width int) string {
+	contextBindings := kb.bindingsForPane(pane)
+	globalBindings := []keyBinding{
+		{"tab", "pane"},
+		{"b", "sidebar"},
+		{"?", "help"},
+		{"q", "quit"},
+	}
+
+	// Try full render
+	all := make([]keyBinding, 0, len(contextBindings)+len(globalBindings))
+	all = append(all, contextBindings...)
+	all = append(all, globalBindings...)
+	full := kb.render(all)
+	if lipgloss.Width(full) <= width {
+		return full
+	}
+
+	// Try key-only for context bindings, full for global
+	var abbreviated []keyBinding
+	for _, b := range contextBindings {
+		abbreviated = append(abbreviated, keyBinding{b.key, ""})
+	}
+	abbreviated = append(abbreviated, globalBindings...)
+	abbr := kb.render(abbreviated)
+	if lipgloss.Width(abbr) <= width {
+		return abbr
+	}
+
+	// Drop context bindings one at a time from the end
+	for len(contextBindings) > 0 {
+		contextBindings = contextBindings[:len(contextBindings)-1]
+		abbreviated = nil
+		for _, b := range contextBindings {
+			abbreviated = append(abbreviated, keyBinding{b.key, ""})
+		}
+		abbreviated = append(abbreviated, globalBindings...)
+		result := kb.render(abbreviated)
+		if lipgloss.Width(result) <= width {
+			return result
+		}
+	}
+
+	// Just global bindings with key-only
+	var keysOnly []keyBinding
+	for _, b := range globalBindings {
+		keysOnly = append(keysOnly, keyBinding{b.key, ""})
+	}
+	return kb.render(keysOnly)
+}
+
 func (kb keyBarModel) bindingsForPane(pane PaneID) []keyBinding {
 	switch pane {
 	case PaneMailbox:
@@ -66,7 +117,11 @@ func (kb keyBarModel) render(bindings []keyBinding) string {
 		if i > 0 {
 			result += kb.sepStyle.Render("  ")
 		}
-		result += kb.keyStyle.Render(b.key) + " " + kb.descStyle.Render(b.desc)
+		if b.desc != "" {
+			result += kb.keyStyle.Render(b.key) + " " + kb.descStyle.Render(b.desc)
+		} else {
+			result += kb.keyStyle.Render(b.key)
+		}
 	}
 	return result
 }

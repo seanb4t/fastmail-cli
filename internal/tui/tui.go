@@ -682,7 +682,7 @@ func (m Model) viewDashboard() string {
 	statsBarContent := m.statsBar.view(m.width)
 
 	// Key bar
-	keyBarContent := m.keyBar.viewForPane(m.panes.focus)
+	keyBarContent := m.keyBar.viewForPaneWidth(m.panes.focus, m.width)
 
 	return lipgloss.JoinVertical(lipgloss.Left, statsBarContent, panes, keyBarContent)
 }
