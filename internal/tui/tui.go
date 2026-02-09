@@ -654,30 +654,27 @@ func (m Model) viewDashboard() string {
 	}
 
 	paneHeight := layout.listHeight + layout.previewHeight
-	// Truncate content to prevent overflow past pane border
-	sidebarContent = truncateLines(sidebarContent, paneHeight)
-	mainContent = truncateLines(mainContent, paneHeight)
 
-	sidebarStyle := lipgloss.NewStyle().
-		Width(layout.sidebarWidth - 2). // account for border
-		Height(paneHeight).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(sidebarBorder)
+	// Constrain content to exact dimensions (Width wraps, MaxHeight clips)
+	// before adding border, so borders are never clipped.
+	innerStyle := func(w int) lipgloss.Style {
+		return lipgloss.NewStyle().Width(w).Height(paneHeight).MaxHeight(paneHeight)
+	}
+	sidebarContent = innerStyle(layout.sidebarWidth - 2).Render(sidebarContent)
+	mainContent = innerStyle(layout.mainWidth - 2).Render(mainContent)
 
-	mainStyle := lipgloss.NewStyle().
-		Width(layout.mainWidth - 2). // account for border
-		Height(paneHeight).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(mainBorder)
+	borderStyle := func(color lipgloss.TerminalColor) lipgloss.Style {
+		return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(color)
+	}
 
 	var panes string
 	if m.panes.sidebar && layout.sidebarWidth > 0 {
 		panes = lipgloss.JoinHorizontal(lipgloss.Top,
-			sidebarStyle.Render(sidebarContent),
-			mainStyle.Render(mainContent),
+			borderStyle(sidebarBorder).Render(sidebarContent),
+			borderStyle(mainBorder).Render(mainContent),
 		)
 	} else {
-		panes = mainStyle.Render(mainContent)
+		panes = borderStyle(mainBorder).Render(mainContent)
 	}
 
 	// Stats bar
