@@ -24,6 +24,7 @@ const (
 	viewMovePicker
 	viewThreadView
 	viewAttachmentPicker
+	viewCompose
 )
 
 // errMsg wraps errors from async commands.
@@ -42,6 +43,7 @@ type Model struct {
 	movePicker       *movePickerModel
 	threadView       *threadViewModel
 	attachmentPicker *attachmentPickerModel
+	composeView      *composeModel
 	actionSource     view // which view initiated the current action
 	width            int
 	height           int
@@ -146,6 +148,8 @@ func (m Model) isFiltering() bool {
 		return false
 	case viewAttachmentPicker:
 		return false
+	case viewCompose:
+		return true
 	}
 	return false
 }
@@ -213,6 +217,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case emailSentMsg:
+		return m.handleEmailSent(msg)
+
+	case emailSendErrMsg:
+		return m.handleEmailSendErr(msg)
+
 	case errMsg:
 		m.err = msg.err
 		m.connecting = false
@@ -243,6 +253,9 @@ func (m *Model) handleWindowSize(msg tea.WindowSizeMsg) {
 	if m.attachmentPicker != nil {
 		m.attachmentPicker.setSize(msg.Width, msg.Height)
 	}
+	if m.composeView != nil {
+		m.composeView.setSize(msg.Width, msg.Height)
+	}
 }
 
 // handleGlobalKeys processes top-level keybindings before view delegation.
@@ -259,13 +272,13 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "q":
-		// In reader/move picker/thread/attachment views, q means "go back" — let the view handle it
-		if m.view != viewEmailReader && m.view != viewMovePicker && m.view != viewThreadView && m.view != viewAttachmentPicker && !m.isFiltering() {
+		// In reader/move picker/thread/attachment/compose views, q means "go back" or is a character — let the view handle it
+		if m.view != viewEmailReader && m.view != viewMovePicker && m.view != viewThreadView && m.view != viewAttachmentPicker && m.view != viewCompose && !m.isFiltering() {
 			m.quit = true
 			return m, tea.Quit, true
 		}
 	case "?":
-		if !m.isFiltering() {
+		if !m.isFiltering() && m.view != viewCompose {
 			m.helpOverlay = true
 			return m, nil, true
 		}
@@ -287,6 +300,8 @@ func (m Model) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateThreadView(msg)
 	case viewAttachmentPicker:
 		return m.updateAttachmentPicker(msg)
+	case viewCompose:
+		return m.updateCompose(msg)
 	}
 	return m, nil
 }
@@ -330,6 +345,16 @@ func (m Model) updateEmailList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.emailReader = &er
 		m.view = viewEmailReader
 		return m, m.fetchEmailBodyCmd(email.ID)
+	}
+
+	if el.compose {
+		el.compose = false
+		m.emailList = &el
+		cm := newComposeModel()
+		cm.setSize(m.width, m.height)
+		m.composeView = &cm
+		m.view = viewCompose
+		return m, nil
 	}
 
 	if el.search != nil {
@@ -516,6 +541,10 @@ func (m Model) View() string {
 		if m.attachmentPicker != nil {
 			return m.attachmentPicker.view()
 		}
+	case viewCompose:
+		if m.composeView != nil {
+			return m.composeView.view()
+		}
 	}
 
 	return ""
@@ -589,7 +618,7 @@ func (m Model) handleActionDone(msg emailActionDoneMsg) (tea.Model, tea.Cmd) {
 		if m.emailReader != nil {
 			cmd = m.emailReader.status.setStatus(msg.action, false)
 		}
-	case viewMailboxList, viewMovePicker, viewThreadView, viewAttachmentPicker:
+	case viewMailboxList, viewMovePicker, viewThreadView, viewAttachmentPicker, viewCompose:
 		// No status to show on these views
 	}
 
@@ -610,7 +639,7 @@ func (m Model) handleActionErr(msg emailActionErrMsg) (tea.Model, tea.Cmd) {
 		if m.emailReader != nil {
 			cmd = m.emailReader.status.setStatus(errText, true)
 		}
-	case viewMailboxList, viewMovePicker, viewThreadView, viewAttachmentPicker:
+	case viewMailboxList, viewMovePicker, viewThreadView, viewAttachmentPicker, viewCompose:
 		// Actions are not initiated from these views
 	}
 
@@ -674,6 +703,66 @@ func removeKeyword(keywords []string, keyword string) []string {
 		}
 	}
 	return result
+}
+
+func (m Model) updateCompose(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.composeView == nil {
+		return m, nil
+	}
+
+	cm := *m.composeView
+	var cmd tea.Cmd
+	cm, cmd = cm.update(msg)
+	m.composeView = &cm
+
+	if cm.canceled {
+		m.composeView = nil
+		m.view = viewEmailList
+		return m, nil
+	}
+
+	if cm.send {
+		cm.send = false
+		m.composeView = &cm
+		return m, m.sendEmailCmd(cm)
+	}
+
+	return m, cmd
+}
+
+func (m Model) handleEmailSent(_ emailSentMsg) (tea.Model, tea.Cmd) {
+	m.composeView = nil
+	m.view = viewEmailList
+	if m.emailList != nil {
+		return m, m.emailList.status.setStatus("Email sent", false)
+	}
+	return m, nil
+}
+
+func (m Model) handleEmailSendErr(msg emailSendErrMsg) (tea.Model, tea.Cmd) {
+	if m.composeView != nil {
+		m.composeView.err = fmt.Sprintf("Send failed: %v", msg.err)
+	}
+	return m, nil
+}
+
+func (m Model) sendEmailCmd(cm composeModel) tea.Cmd {
+	client := m.client
+	to := cm.toAddress()
+	subject := cm.subject()
+	body := cm.body()
+	return func() tea.Msg {
+		opts := fastmail.SendOptions{
+			To:      []fastmail.EmailAddress{{Email: to}},
+			Subject: subject,
+			Body:    body,
+		}
+		emailID, err := client.Mail().Send(context.Background(), opts)
+		if err != nil {
+			return emailSendErrMsg{err: err}
+		}
+		return emailSentMsg{emailID: emailID}
+	}
 }
 
 func (m Model) updateMovePicker(msg tea.Msg) (tea.Model, tea.Cmd) {

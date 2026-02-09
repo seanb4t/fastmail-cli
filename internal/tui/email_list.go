@@ -70,6 +70,7 @@ type emailListModel struct {
 	searchQuery   string // current search query
 	savedItems    []list.Item
 	search        *string // signals parent to run search
+	compose       bool    // signals parent to open compose view
 }
 
 func newEmailListModel(mailbox fastmail.Mailbox) emailListModel {
@@ -170,6 +171,9 @@ func (m *emailListModel) handleKey(key string) (bool, tea.Cmd) {
 	case "/":
 		m.searchMode = true
 		m.searchInput.Focus()
+		return true, nil
+	case "c":
+		m.compose = true
 		return true, nil
 	case "a", "r", "m", "f":
 		return m.handleActionKey(key)

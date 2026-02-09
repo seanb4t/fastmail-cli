@@ -31,6 +31,7 @@ func helpForView(v view) string {
 		writeBinding(&b, "r", "Toggle read/unread")
 		writeBinding(&b, "f", "Toggle flag")
 		writeBinding(&b, "m", "Move to mailbox")
+		writeBinding(&b, "c", "Compose")
 		writeBinding(&b, "/", "Search emails")
 		writeBinding(&b, "esc", "Back to mailboxes")
 		writeBinding(&b, "q", "Quit")
@@ -58,6 +59,13 @@ func helpForView(v view) string {
 		b.WriteString("\n\n")
 		writeBinding(&b, "enter", "Download attachment")
 		writeBinding(&b, "q/esc", "Back to reader")
+	case viewCompose:
+		b.WriteString(helpTitleStyle.Render("Keybindings — Compose"))
+		b.WriteString("\n\n")
+		writeBinding(&b, "tab", "Next field")
+		writeBinding(&b, "shift+tab", "Previous field")
+		writeBinding(&b, "ctrl+s", "Send email")
+		writeBinding(&b, "esc", "Cancel")
 	case viewMovePicker:
 		return ""
 	}
