@@ -63,13 +63,21 @@ func registerMailTools(s *Server, cfg ToolsConfig) {
 		makeMailGetHandler(cfg),
 	)
 
-	// mail_search - Search emails
+	// mail_search - Search emails with structured filters
 	s.RegisterTool(
-		NewTool("mail_search", "Search emails by text query").
-			WithProperty("query", "string", "Search query (e.g., 'from:alice subject:meeting')").
+		NewTool("mail_search", "Search emails by text query and/or structured filters. Query syntax: 'from:alice subject:meeting has:attachment before:2024-06-01 is:unread'. Flags are ANDed with query.").
+			WithProperty("query", "string", "Search query text with optional field:value filters").
+			WithProperty("from", "string", "Filter by sender address or name").
+			WithProperty("to", "string", "Filter by recipient address or name").
+			WithProperty("subject", "string", "Filter by subject text").
+			WithProperty("before", "string", "Emails before date (YYYY-MM-DD)").
+			WithProperty("after", "string", "Emails after date (YYYY-MM-DD)").
+			WithProperty("has_attachment", "boolean", "Filter for emails with attachments").
+			WithProperty("folder", "string", "Filter by mailbox folder name").
+			WithProperty("unread", "boolean", "Filter for unread emails").
+			WithProperty("flagged", "boolean", "Filter for flagged/starred emails").
 			WithProperty("limit", "integer", "Maximum number of results (default: 10)").
-			WithProperty("snippets", "boolean", "Include highlighted search snippets with results (default: false)").
-			WithRequired("query"),
+			WithProperty("snippets", "boolean", "Include highlighted search snippets with results (default: false)"),
 		makeMailSearchHandler(cfg),
 	)
 
@@ -219,28 +227,75 @@ func makeMailGetHandler(cfg ToolsConfig) ToolHandler {
 
 func makeMailSearchHandler(cfg ToolsConfig) ToolHandler {
 	return func(ctx context.Context, args map[string]any) (any, error) {
-		query := getStringArg(args, "query", "")
-		if query == "" {
-			return nil, oops.Errorf("query is required")
+		opts, err := buildMCPSearchOpts(args)
+		if err != nil {
+			return nil, err
 		}
-		limit := getUint64Arg(args, "limit", 10)
-		snippets := getBoolArg(args, "snippets", false)
 
+		snippets := getBoolArg(args, "snippets", false)
 		if snippets {
-			results, err := cfg.Client.Mail().SearchWithSnippets(ctx, query, limit)
+			results, err := cfg.Client.Mail().SearchAdvancedWithSnippets(ctx, opts)
 			if err != nil {
 				return nil, oops.Wrapf(err, "searching emails with snippets")
 			}
 			return convertSearchResultsToMCP(results), nil
 		}
 
-		emails, err := cfg.Client.Mail().Search(ctx, query, limit)
+		emails, err := cfg.Client.Mail().SearchAdvanced(ctx, opts)
 		if err != nil {
 			return nil, oops.Wrapf(err, "searching emails")
 		}
 
 		return convertEmailsToMCP(emails), nil
 	}
+}
+
+// buildMCPSearchOpts constructs SearchOptions from MCP tool arguments.
+func buildMCPSearchOpts(args map[string]any) (fastmail.SearchOptions, error) {
+	opts := fastmail.SearchOptions{
+		Query:   getStringArg(args, "query", ""),
+		From:    getStringArg(args, "from", ""),
+		To:      getStringArg(args, "to", ""),
+		Subject: getStringArg(args, "subject", ""),
+		Folder:  getStringArg(args, "folder", ""),
+		Limit:   getUint64Arg(args, "limit", 10),
+	}
+
+	if beforeStr := getStringArg(args, "before", ""); beforeStr != "" {
+		t, err := time.Parse("2006-01-02", beforeStr)
+		if err != nil {
+			return opts, oops.Wrapf(err, "parsing before date (must be YYYY-MM-DD)")
+		}
+		opts.Before = &t
+	}
+	if afterStr := getStringArg(args, "after", ""); afterStr != "" {
+		t, err := time.Parse("2006-01-02", afterStr)
+		if err != nil {
+			return opts, oops.Wrapf(err, "parsing after date (must be YYYY-MM-DD)")
+		}
+		opts.After = &t
+	}
+
+	if _, ok := args["has_attachment"]; ok {
+		v := getBoolArg(args, "has_attachment", false)
+		opts.HasAttachment = &v
+	}
+	if _, ok := args["unread"]; ok {
+		v := getBoolArg(args, "unread", false)
+		opts.Unread = &v
+	}
+	if _, ok := args["flagged"]; ok {
+		v := getBoolArg(args, "flagged", false)
+		opts.Flagged = &v
+	}
+
+	if opts.Query == "" && opts.From == "" && opts.To == "" && opts.Subject == "" &&
+		opts.Before == nil && opts.After == nil && opts.HasAttachment == nil &&
+		opts.Folder == "" && opts.Unread == nil && opts.Flagged == nil {
+		return opts, oops.Errorf("query or at least one filter is required")
+	}
+
+	return opts, nil
 }
 
 func makeMailSendHandler(cfg ToolsConfig) ToolHandler {

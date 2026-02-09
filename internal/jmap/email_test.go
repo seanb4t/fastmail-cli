@@ -3,6 +3,7 @@ package jmap
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -221,6 +222,70 @@ func TestThreadGetResponse_DecodeMultipleThreads(t *testing.T) {
 	assert.Equal(t, "thread-1", resp.List[0].ID)
 	assert.Equal(t, "thread-2", resp.List[1].ID)
 	assert.Len(t, resp.List[1].EmailIDs, 2)
+}
+
+func TestEmailQueryArgs_To(t *testing.T) {
+	args := NewEmailQuery("account-1").To("bob@example.com").Build()
+	filter := args["filter"].(map[string]any)
+	assert.Equal(t, "bob@example.com", filter["to"])
+}
+
+func TestEmailQueryArgs_Subject(t *testing.T) {
+	args := NewEmailQuery("account-1").Subject("hello").Build()
+	filter := args["filter"].(map[string]any)
+	assert.Equal(t, "hello", filter["subject"])
+}
+
+func TestEmailQueryArgs_BeforeAfter(t *testing.T) {
+	before := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	after := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	args := NewEmailQuery("account-1").
+		Before(before).
+		After(after).
+		Build()
+
+	filter := args["filter"].(map[string]any)
+	assert.Equal(t, "2024-06-01T00:00:00Z", filter["before"])
+	assert.Equal(t, "2024-01-01T00:00:00Z", filter["after"])
+}
+
+func TestEmailQueryArgs_HasAttachment(t *testing.T) {
+	args := NewEmailQuery("account-1").HasAttachment(true).Build()
+	filter := args["filter"].(map[string]any)
+	assert.Equal(t, true, filter["hasAttachment"])
+}
+
+func TestEmailQueryArgs_NotKeyword(t *testing.T) {
+	args := NewEmailQuery("account-1").NotKeyword("$seen").Build()
+	filter := args["filter"].(map[string]any)
+	assert.Equal(t, "$seen", filter["notKeyword"])
+}
+
+func TestEmailQueryArgs_WithFilter(t *testing.T) {
+	customFilter := map[string]any{
+		"operator": "AND",
+		"conditions": []map[string]any{
+			{"from": "alice"},
+			{"subject": "test"},
+		},
+	}
+
+	args := NewEmailQuery("account-1").WithFilter(customFilter).Build()
+	filter := args["filter"].(map[string]any)
+	assert.Equal(t, "AND", filter["operator"])
+}
+
+func TestEmailQueryArgs_InMailboxOtherThan(t *testing.T) {
+	args := NewEmailQuery("account-1").InMailboxOtherThan("mb-1", "mb-2").Build()
+	filter := args["filter"].(map[string]any)
+	assert.Equal(t, []string{"mb-1", "mb-2"}, filter["inMailboxOtherThan"])
+}
+
+func TestEmailQueryArgs_Header(t *testing.T) {
+	args := NewEmailQuery("account-1").Header("X-Custom", "value").Build()
+	filter := args["filter"].(map[string]any)
+	assert.Equal(t, []string{"X-Custom", "value"}, filter["header"])
 }
 
 func TestEmailQueryThenGet_ResultReference(t *testing.T) {

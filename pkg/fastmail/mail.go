@@ -10,6 +10,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/seanb4t/fastmail-cli/internal/jmap"
+	"github.com/seanb4t/fastmail-cli/internal/search"
 )
 
 // MailService provides email operations.
@@ -302,6 +303,261 @@ func (s *MailService) SearchWithSnippets(ctx context.Context, query string, limi
 	}
 
 	return results, nil
+}
+
+// SearchOptions specifies structured search criteria for SearchAdvanced.
+type SearchOptions struct {
+	// Query is parsed via search.Parse() into structured JMAP filters.
+	Query string
+	// From filters by sender address or name.
+	From string
+	// To filters by recipient address or name.
+	To string
+	// Subject filters by subject text.
+	Subject string
+	// Before filters for emails received before this time.
+	Before *time.Time
+	// After filters for emails received after this time.
+	After *time.Time
+	// HasAttachment filters for emails with attachments when non-nil.
+	HasAttachment *bool
+	// Folder is a mailbox name (resolved to ID) to filter by.
+	Folder string
+	// Unread when non-nil: true = not seen, false = seen.
+	Unread *bool
+	// Flagged when non-nil: true = flagged, false = not flagged.
+	Flagged *bool
+	// Limit is the maximum number of results (0 for server default).
+	Limit uint64
+	// Snippets includes highlighted search snippets in results.
+	Snippets bool
+}
+
+// SearchAdvanced returns emails matching structured search options.
+func (s *MailService) SearchAdvanced(ctx context.Context, opts SearchOptions) ([]Email, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	filter, err := s.buildSearchFilter(ctx, accountID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	queryArgs := map[string]any{
+		"accountId": accountID,
+		"filter":    filter,
+		"sort": []jmap.Comparator{
+			{Property: "receivedAt", IsAscending: false},
+		},
+	}
+	if opts.Limit > 0 {
+		queryArgs["limit"] = opts.Limit
+	}
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	queryCallID := req.Invoke("Email/query", queryArgs)
+
+	getBuilder := jmap.NewEmailGet(accountID).
+		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+	getArgs := getBuilder.Build()
+	getArgs["#ids"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
+	req.Invoke("Email/get", getArgs)
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	queryResult, err := resp.GetResult(queryCallID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting query result")
+	}
+	if queryResult.IsError() {
+		return nil, oops.Errorf("query failed: %s", queryResult.Error())
+	}
+
+	getResult, err := resp.GetResult("1")
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting email list result")
+	}
+	if getResult.IsError() {
+		return nil, oops.Errorf("get failed: %s", getResult.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := getResult.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding email response")
+	}
+
+	return convertEmails(getResp.List), nil
+}
+
+// SearchAdvancedWithSnippets returns emails with snippets matching structured search options.
+func (s *MailService) SearchAdvancedWithSnippets(ctx context.Context, opts SearchOptions) ([]SearchResult, error) {
+	accountID, err := s.client.getAccountID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	filter, err := s.buildSearchFilter(ctx, accountID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	queryArgs := map[string]any{
+		"accountId": accountID,
+		"filter":    filter,
+		"sort": []jmap.Comparator{
+			{Property: "receivedAt", IsAscending: false},
+		},
+	}
+	if opts.Limit > 0 {
+		queryArgs["limit"] = opts.Limit
+	}
+
+	req := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
+	queryCallID := req.Invoke("Email/query", queryArgs)
+
+	getBuilder := jmap.NewEmailGet(accountID).
+		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+	getArgs := getBuilder.Build()
+	getArgs["#ids"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
+	req.Invoke("Email/get", getArgs)
+
+	snippetArgs := jmap.NewSearchSnippetGet(accountID).
+		Filter(filter).
+		Build()
+	snippetArgs["#emailIds"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
+	req.Invoke("SearchSnippet/get", snippetArgs)
+
+	resp, err := s.client.jmap.Call(ctx, req)
+	if err != nil {
+		return nil, oops.Wrapf(err, "executing JMAP request")
+	}
+
+	queryResult, err := resp.GetResult(queryCallID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting query result")
+	}
+	if queryResult.IsError() {
+		return nil, oops.Errorf("query failed: %s", queryResult.Error())
+	}
+
+	getResult, err := resp.GetResult("1")
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting email list result")
+	}
+	if getResult.IsError() {
+		return nil, oops.Errorf("get failed: %s", getResult.Error())
+	}
+
+	var getResp jmap.EmailGetResponse
+	if err := getResult.Decode(&getResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding email response")
+	}
+
+	snippetResult, err := resp.GetResult("2")
+	if err != nil {
+		return nil, oops.Wrapf(err, "getting snippet result")
+	}
+	if snippetResult.IsError() {
+		return nil, oops.Errorf("snippet get failed: %s", snippetResult.Error())
+	}
+
+	var snippetResp jmap.SearchSnippetGetResponse
+	if err := snippetResult.Decode(&snippetResp); err != nil {
+		return nil, oops.Wrapf(err, "decoding snippet response")
+	}
+
+	snippetMap := make(map[string]jmap.SearchSnippet, len(snippetResp.List))
+	for _, sn := range snippetResp.List {
+		snippetMap[sn.EmailID] = sn
+	}
+
+	emails := convertEmails(getResp.List)
+	results := make([]SearchResult, len(emails))
+	for i, email := range emails {
+		result := SearchResult{Email: email}
+		if snippet, ok := snippetMap[email.ID]; ok {
+			if snippet.Subject != nil {
+				result.SubjectSnippet = *snippet.Subject
+			}
+			if snippet.Preview != nil {
+				result.PreviewSnippet = *snippet.Preview
+			}
+		}
+		results[i] = result
+	}
+
+	return results, nil
+}
+
+// buildSearchFilter constructs a JMAP filter from SearchOptions.
+func (s *MailService) buildSearchFilter(ctx context.Context, accountID string, opts SearchOptions) (map[string]any, error) {
+	var conditions []search.Filter
+
+	// Parse free-text query if provided
+	if opts.Query != "" {
+		parsed := search.Parse(opts.Query)
+		jm := parsed.ToJMAP()
+		if len(jm) > 0 {
+			conditions = append(conditions, parsed)
+		}
+	}
+
+	// Add structured field filters
+	if opts.From != "" {
+		conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{From: opts.From}))
+	}
+	if opts.To != "" {
+		conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{To: opts.To}))
+	}
+	if opts.Subject != "" {
+		conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{Subject: opts.Subject}))
+	}
+	if opts.Before != nil {
+		conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{Before: opts.Before}))
+	}
+	if opts.After != nil {
+		conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{After: opts.After}))
+	}
+	if opts.HasAttachment != nil {
+		conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{HasAttachment: opts.HasAttachment}))
+	}
+	if opts.Unread != nil {
+		if *opts.Unread {
+			conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{NotKeyword: "$seen"}))
+		} else {
+			conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{HasKeyword: "$seen"}))
+		}
+	}
+	if opts.Flagged != nil {
+		if *opts.Flagged {
+			conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{HasKeyword: "$flagged"}))
+		} else {
+			conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{NotKeyword: "$flagged"}))
+		}
+	}
+
+	// Resolve folder name to mailbox ID
+	if opts.Folder != "" {
+		mailboxID, err := s.resolveMailbox(ctx, accountID, opts.Folder)
+		if err != nil {
+			return nil, oops.Wrapf(err, "resolving folder %q", opts.Folder)
+		}
+		conditions = append(conditions, search.NewConditionFilter(&search.FilterCondition{InMailbox: mailboxID}))
+	}
+
+	// Build final filter
+	if len(conditions) == 0 {
+		return map[string]any{}, nil
+	}
+	if len(conditions) == 1 {
+		return conditions[0].ToJMAP(), nil
+	}
+	return search.NewCompoundFilter(search.OpAND, conditions...).ToJMAP(), nil
 }
 
 // Move moves an email to a different folder.

@@ -323,16 +323,36 @@ func newMailShowCommand() *cobra.Command {
 
 // newMailSearchCommand creates the mail search command.
 func newMailSearchCommand() *cobra.Command {
-	var limit uint64
-	var snippets bool
+	var (
+		limit         uint64
+		snippets      bool
+		from          string
+		to            string
+		subject       string
+		before        string
+		after         string
+		hasAttachment bool
+		folder        string
+		unread        bool
+		flagged       bool
+	)
 
 	cmd := &cobra.Command{
-		Use:   "search QUERY",
+		Use:   "search [QUERY]",
 		Short: "Search emails",
-		Long:  "Search emails using a text query.",
-		Args:  cobra.ExactArgs(1),
+		Long: `Search emails using a text query and/or structured filters.
+
+Query syntax supports field:value filters combined with free text:
+  from:alice subject:"meeting notes" has:attachment before:2024-06-01
+  is:unread is:flagged in:Inbox -from:spam A OR B
+
+Flags (--from, --to, etc.) are ANDed with the query.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			query := args[0]
+			opts, err := buildSearchOptions(cmd, args, from, to, subject, before, after, folder, limit, snippets)
+			if err != nil {
+				return err
+			}
 
 			client, err := createClient()
 			if err != nil {
@@ -345,14 +365,14 @@ func newMailSearchCommand() *cobra.Command {
 			}
 
 			if snippets {
-				results, err := client.Mail().SearchWithSnippets(ctx, query, limit)
+				results, err := client.Mail().SearchAdvancedWithSnippets(ctx, opts)
 				if err != nil {
 					return fmt.Errorf("searching emails: %w", err)
 				}
 				return outputSearchResults(cmd, results)
 			}
 
-			emails, err := client.Mail().Search(ctx, query, limit)
+			emails, err := client.Mail().SearchAdvanced(ctx, opts)
 			if err != nil {
 				return fmt.Errorf("searching emails: %w", err)
 			}
@@ -363,8 +383,69 @@ func newMailSearchCommand() *cobra.Command {
 
 	cmd.Flags().Uint64VarP(&limit, "limit", "n", 10, "maximum emails to return")
 	cmd.Flags().BoolVarP(&snippets, "snippets", "s", false, "include highlighted search snippets")
+	cmd.Flags().StringVar(&from, "from", "", "filter by sender")
+	cmd.Flags().StringVar(&to, "to", "", "filter by recipient")
+	cmd.Flags().StringVar(&subject, "subject", "", "filter by subject text")
+	cmd.Flags().StringVar(&before, "before", "", "emails before date (YYYY-MM-DD)")
+	cmd.Flags().StringVar(&after, "after", "", "emails after date (YYYY-MM-DD)")
+	cmd.Flags().BoolVar(&hasAttachment, "has-attachment", false, "filter for emails with attachments")
+	cmd.Flags().StringVarP(&folder, "folder", "f", "", "filter by mailbox folder name")
+	cmd.Flags().BoolVar(&unread, "unread", false, "filter for unread emails")
+	cmd.Flags().BoolVar(&flagged, "flagged", false, "filter for flagged/starred emails")
 
 	return cmd
+}
+
+// buildSearchOptions constructs SearchOptions from CLI flags and arguments.
+func buildSearchOptions(cmd *cobra.Command, args []string, from, to, subject, before, after, folder string, limit uint64, snippets bool) (fastmail.SearchOptions, error) {
+	opts := fastmail.SearchOptions{
+		From:     from,
+		To:       to,
+		Subject:  subject,
+		Folder:   folder,
+		Limit:    limit,
+		Snippets: snippets,
+	}
+
+	if len(args) > 0 {
+		opts.Query = args[0]
+	}
+
+	if before != "" {
+		t, err := time.Parse("2006-01-02", before)
+		if err != nil {
+			return opts, fmt.Errorf("invalid --before date (must be YYYY-MM-DD): %w", err)
+		}
+		opts.Before = &t
+	}
+	if after != "" {
+		t, err := time.Parse("2006-01-02", after)
+		if err != nil {
+			return opts, fmt.Errorf("invalid --after date (must be YYYY-MM-DD): %w", err)
+		}
+		opts.After = &t
+	}
+
+	if cmd.Flags().Changed("has-attachment") {
+		v, _ := cmd.Flags().GetBool("has-attachment")
+		opts.HasAttachment = &v
+	}
+	if cmd.Flags().Changed("unread") {
+		v, _ := cmd.Flags().GetBool("unread")
+		opts.Unread = &v
+	}
+	if cmd.Flags().Changed("flagged") {
+		v, _ := cmd.Flags().GetBool("flagged")
+		opts.Flagged = &v
+	}
+
+	if opts.Query == "" && opts.From == "" && opts.To == "" && opts.Subject == "" &&
+		opts.Before == nil && opts.After == nil && opts.HasAttachment == nil &&
+		opts.Folder == "" && opts.Unread == nil && opts.Flagged == nil {
+		return opts, fmt.Errorf("provide a query argument or at least one filter flag")
+	}
+
+	return opts, nil
 }
 
 // outputSearchResults writes search results with snippets to output.

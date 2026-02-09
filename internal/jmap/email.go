@@ -1,5 +1,7 @@
 package jmap
 
+import "time"
+
 // Email represents a JMAP Email object.
 // See: https://datatracker.ietf.org/doc/html/rfc8621#section-4
 type Email struct {
@@ -91,9 +93,100 @@ func (b *EmailQueryBuilder) From(email string) *EmailQueryBuilder {
 	return b
 }
 
+// To filters emails by recipient.
+func (b *EmailQueryBuilder) To(email string) *EmailQueryBuilder {
+	b.filter["to"] = email
+	return b
+}
+
+// Cc filters emails by CC recipient.
+func (b *EmailQueryBuilder) Cc(email string) *EmailQueryBuilder {
+	b.filter["cc"] = email
+	return b
+}
+
+// Bcc filters emails by BCC recipient.
+func (b *EmailQueryBuilder) Bcc(email string) *EmailQueryBuilder {
+	b.filter["bcc"] = email
+	return b
+}
+
+// Subject filters emails by subject text.
+func (b *EmailQueryBuilder) Subject(text string) *EmailQueryBuilder {
+	b.filter["subject"] = text
+	return b
+}
+
+// Body filters emails by body content.
+func (b *EmailQueryBuilder) Body(text string) *EmailQueryBuilder {
+	b.filter["body"] = text
+	return b
+}
+
+// Text filters emails by full-text search across all fields.
+func (b *EmailQueryBuilder) Text(text string) *EmailQueryBuilder {
+	b.filter["text"] = text
+	return b
+}
+
+// Before filters emails received before the given time.
+func (b *EmailQueryBuilder) Before(t time.Time) *EmailQueryBuilder {
+	b.filter["before"] = t.UTC().Format(time.RFC3339)
+	return b
+}
+
+// After filters emails received after the given time.
+func (b *EmailQueryBuilder) After(t time.Time) *EmailQueryBuilder {
+	b.filter["after"] = t.UTC().Format(time.RFC3339)
+	return b
+}
+
+// MinSize filters emails with size >= minSize bytes.
+func (b *EmailQueryBuilder) MinSize(minSize uint64) *EmailQueryBuilder {
+	b.filter["minSize"] = minSize
+	return b
+}
+
+// MaxSize filters emails with size <= maxSize bytes.
+func (b *EmailQueryBuilder) MaxSize(maxSize uint64) *EmailQueryBuilder {
+	b.filter["maxSize"] = maxSize
+	return b
+}
+
+// HasAttachment filters emails that have (or don't have) attachments.
+func (b *EmailQueryBuilder) HasAttachment(has bool) *EmailQueryBuilder {
+	b.filter["hasAttachment"] = has
+	return b
+}
+
 // HasKeyword filters emails with a specific keyword.
 func (b *EmailQueryBuilder) HasKeyword(keyword string) *EmailQueryBuilder {
 	b.filter["hasKeyword"] = keyword
+	return b
+}
+
+// NotKeyword filters emails that do NOT have a specific keyword.
+func (b *EmailQueryBuilder) NotKeyword(keyword string) *EmailQueryBuilder {
+	b.filter["notKeyword"] = keyword
+	return b
+}
+
+// InMailboxOtherThan filters emails NOT in the specified mailboxes.
+func (b *EmailQueryBuilder) InMailboxOtherThan(mailboxIDs ...string) *EmailQueryBuilder {
+	b.filter["inMailboxOtherThan"] = mailboxIDs
+	return b
+}
+
+// Header filters emails by a specific header field name and value.
+func (b *EmailQueryBuilder) Header(name, value string) *EmailQueryBuilder {
+	b.filter["header"] = []string{name, value}
+	return b
+}
+
+// WithFilter replaces the entire filter with a pre-built filter map.
+// This is used for compound filters (AND/OR/NOT) from the search parser.
+func (b *EmailQueryBuilder) WithFilter(filter map[string]any) *EmailQueryBuilder {
+	b.filter = filter
 	return b
 }
 
