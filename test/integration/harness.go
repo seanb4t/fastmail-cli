@@ -69,6 +69,11 @@ type MockEmail struct {
 	MailboxIDs  map[string]bool  `json:"mailboxIds"`
 	From        *MockAddress     `json:"from,omitempty"`
 	To          []MockAddress    `json:"to,omitempty"`
+	Cc          []MockAddress    `json:"cc,omitempty"`
+	ReplyTo     []MockAddress    `json:"replyTo,omitempty"`
+	MessageID   []string         `json:"messageId,omitempty"`
+	InReplyTo   []string         `json:"inReplyTo,omitempty"`
+	References  []string         `json:"references,omitempty"`
 	Body        string           `json:"body,omitempty"`
 	Attachments []MockAttachment `json:"attachments,omitempty"`
 }
@@ -397,6 +402,35 @@ func emailToFullMap(e MockEmail) map[string]any {
 			to[i] = map[string]any{"name": a.Name, "email": a.Email}
 		}
 		result["to"] = to
+	}
+
+	// Cc addresses — only present when the mock data provides them
+	if len(e.Cc) > 0 {
+		cc := make([]map[string]any, len(e.Cc))
+		for i, a := range e.Cc {
+			cc[i] = map[string]any{"name": a.Name, "email": a.Email}
+		}
+		result["cc"] = cc
+	}
+
+	// ReplyTo addresses — only present when the mock data provides them
+	if len(e.ReplyTo) > 0 {
+		replyTo := make([]map[string]any, len(e.ReplyTo))
+		for i, a := range e.ReplyTo {
+			replyTo[i] = map[string]any{"name": a.Name, "email": a.Email}
+		}
+		result["replyTo"] = replyTo
+	}
+
+	// Message threading headers — only present when mock data provides them
+	if len(e.MessageID) > 0 {
+		result["messageId"] = e.MessageID
+	}
+	if len(e.InReplyTo) > 0 {
+		result["inReplyTo"] = e.InReplyTo
+	}
+	if len(e.References) > 0 {
+		result["references"] = e.References
 	}
 
 	// Body content — only present when mock data provides it
