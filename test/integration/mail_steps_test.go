@@ -29,6 +29,8 @@ func registerMailSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^I search for "([^"]*)" with limit (\d+)$`, iSearchWithLimit)
 	sc.Step(`^I search with filter from "([^"]*)" with limit (\d+)$`, iSearchWithFilterFrom)
 	sc.Step(`^I search for "([^"]*)" with snippets and limit (\d+)$`, iSearchWithSnippets)
+	sc.Step(`^I search advanced with snippets for from "([^"]*)" with limit (\d+)$`, iSearchAdvancedWithSnippets)
+	sc.Step(`^I get email metadata for "([^"]*)"$`, iGetEmailMetadata)
 	sc.Step(`^I send an email to "([^"]*)" with subject "([^"]*)" and body "([^"]*)"$`, iSendAnEmail)
 	sc.Step(`^I send a scheduled email to "([^"]*)" with subject "([^"]*)" and body "([^"]*)" at "([^"]*)"$`, iSendScheduledEmail)
 	sc.Step(`^I set keyword "([^"]*)" to (true|false) on email "([^"]*)"$`, iSetKeyword)
@@ -50,6 +52,8 @@ func registerMailSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the move operation should succeed$`, theMoveOperationShouldSucceed)
 	sc.Step(`^I should receive (\d+) search results? with snippets$`, iShouldReceiveSearchResultsWithSnippets)
 	sc.Step(`^search result (\d+) should have a preview snippet$`, searchResultShouldHavePreviewSnippet)
+	sc.Step(`^the email metadata should have subject "([^"]*)"$`, theEmailMetadataShouldHaveSubject)
+	sc.Step(`^the email metadata body should be empty$`, theEmailMetadataBodyShouldBeEmpty)
 }
 
 // Background steps
@@ -150,6 +154,45 @@ func iSearchWithSnippets(ctx context.Context, query string, limit int) (context.
 				"preview_snippet": r.PreviewSnippet,
 			}
 		}
+	}
+	return ctx, nil
+}
+
+func iSearchAdvancedWithSnippets(ctx context.Context, from string, limit int) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	client := fastmail.NewClient(w.SessionServer.URL, "test-token")
+
+	opts := fastmail.SearchOptions{
+		From:  from,
+		Limit: uint64(limit),
+	}
+	results, err := client.Mail().SearchAdvancedWithSnippets(ctx, opts)
+	w.ResultError = err
+	if err == nil {
+		w.SearchResults = make([]map[string]any, len(results))
+		for i, r := range results {
+			w.SearchResults[i] = map[string]any{
+				"id":              r.Email.ID,
+				"subject":         r.Email.Subject,
+				"subject_snippet": r.SubjectSnippet,
+				"preview_snippet": r.PreviewSnippet,
+			}
+		}
+	}
+	return ctx, nil
+}
+
+func iGetEmailMetadata(ctx context.Context, emailID string) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	if w.DomainData == nil {
+		w.DomainData = make(map[string]any)
+	}
+	client := fastmail.NewClient(w.SessionServer.URL, "test-token")
+
+	email, err := client.Mail().Get(ctx, emailID)
+	w.ResultError = err
+	if err == nil {
+		w.DomainData["metadata_email"] = email
 	}
 	return ctx, nil
 }
@@ -378,6 +421,33 @@ func searchResultShouldHavePreviewSnippet(ctx context.Context, index int) error 
 	snippet, _ := w.SearchResults[i]["preview_snippet"].(string)
 	if snippet == "" {
 		return fmt.Errorf("expected preview snippet for result %d, got empty", index)
+	}
+	return nil
+}
+
+func theEmailMetadataShouldHaveSubject(ctx context.Context, subject string) error {
+	w := WorldFromContext(ctx)
+	if w.ResultError != nil {
+		return fmt.Errorf("unexpected error: %w", w.ResultError)
+	}
+	email, ok := w.DomainData["metadata_email"].(*fastmail.Email)
+	if !ok || email == nil {
+		return fmt.Errorf("no metadata email result (was get email metadata called?)")
+	}
+	if email.Subject != subject {
+		return fmt.Errorf("expected subject %q, got %q", subject, email.Subject)
+	}
+	return nil
+}
+
+func theEmailMetadataBodyShouldBeEmpty(ctx context.Context) error {
+	w := WorldFromContext(ctx)
+	email, ok := w.DomainData["metadata_email"].(*fastmail.Email)
+	if !ok || email == nil {
+		return fmt.Errorf("no metadata email result (was get email metadata called?)")
+	}
+	if email.Body != "" {
+		return fmt.Errorf("expected empty body for metadata-only get, got %q", email.Body)
 	}
 	return nil
 }

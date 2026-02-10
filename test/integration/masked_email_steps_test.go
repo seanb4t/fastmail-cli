@@ -14,9 +14,10 @@ import (
 
 // maskedEmailResult holds captured results from masked email When steps.
 type maskedEmailResult struct {
-	MaskedEmails []fastmail.MaskedEmail
-	CreatedEmail *fastmail.MaskedEmail
-	OperationErr error
+	MaskedEmails   []fastmail.MaskedEmail
+	CreatedEmail   *fastmail.MaskedEmail
+	RetrievedEmail *fastmail.MaskedEmail
+	OperationErr   error
 }
 
 func registerMaskedEmailSteps(sc *godog.ScenarioContext) {
@@ -25,6 +26,7 @@ func registerMaskedEmailSteps(sc *godog.ScenarioContext) {
 
 	// When steps
 	sc.Step(`^I list masked emails$`, iListMaskedEmails)
+	sc.Step(`^I get masked email "([^"]*)"$`, iGetMaskedEmail)
 	sc.Step(`^I create a masked email for domain "([^"]*)" with description "([^"]*)"$`, iCreateMaskedEmail)
 	sc.Step(`^I disable masked email "([^"]*)"$`, iDisableMaskedEmail)
 	sc.Step(`^I enable masked email "([^"]*)"$`, iEnableMaskedEmail)
@@ -38,6 +40,9 @@ func registerMaskedEmailSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^the masked email creation should succeed$`, theMaskedEmailCreationShouldSucceed)
 	sc.Step(`^the created masked email ID should not be empty$`, theCreatedMaskedEmailIDShouldNotBeEmpty)
 	sc.Step(`^the masked email operation should succeed$`, theMaskedEmailOperationShouldSucceed)
+	sc.Step(`^the masked email get should succeed$`, theMaskedEmailGetShouldSucceed)
+	sc.Step(`^the retrieved masked email should have email "([^"]*)"$`, theRetrievedMaskedEmailShouldHaveEmail)
+	sc.Step(`^the retrieved masked email should have state "([^"]*)"$`, theRetrievedMaskedEmailShouldHaveState)
 }
 
 func getMaskedEmailResult(w *World) *maskedEmailResult {
@@ -71,6 +76,17 @@ func iListMaskedEmails(ctx context.Context) (context.Context, error) {
 	maskedEmails, err := client.MaskedEmail().List(ctx)
 	result.OperationErr = err
 	result.MaskedEmails = maskedEmails
+	return ctx, nil
+}
+
+func iGetMaskedEmail(ctx context.Context, id string) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	result := getMaskedEmailResult(w)
+	client := fastmail.NewClient(w.SessionServer.URL, "test-token")
+
+	maskedEmail, err := client.MaskedEmail().Get(ctx, id)
+	result.OperationErr = err
+	result.RetrievedEmail = maskedEmail
 	return ctx, nil
 }
 
@@ -197,6 +213,44 @@ func theMaskedEmailOperationShouldSucceed(ctx context.Context) error {
 	result := getMaskedEmailResult(w)
 	if result.OperationErr != nil {
 		return fmt.Errorf("masked email operation failed: %w", result.OperationErr)
+	}
+	return nil
+}
+
+func theMaskedEmailGetShouldSucceed(ctx context.Context) error {
+	w := WorldFromContext(ctx)
+	result := getMaskedEmailResult(w)
+	if result.OperationErr != nil {
+		return fmt.Errorf("masked email get failed: %w", result.OperationErr)
+	}
+	if result.RetrievedEmail == nil {
+		return fmt.Errorf("retrieved masked email is nil")
+	}
+	return nil
+}
+
+func theRetrievedMaskedEmailShouldHaveEmail(ctx context.Context, email string) error {
+	w := WorldFromContext(ctx)
+	result := getMaskedEmailResult(w)
+	if result.RetrievedEmail == nil {
+		return fmt.Errorf("no retrieved masked email")
+	}
+	actual := result.RetrievedEmail.Email
+	if actual != email {
+		return fmt.Errorf("expected email %q, got %q", email, actual)
+	}
+	return nil
+}
+
+func theRetrievedMaskedEmailShouldHaveState(ctx context.Context, state string) error {
+	w := WorldFromContext(ctx)
+	result := getMaskedEmailResult(w)
+	if result.RetrievedEmail == nil {
+		return fmt.Errorf("no retrieved masked email")
+	}
+	actual := string(result.RetrievedEmail.State)
+	if actual != state {
+		return fmt.Errorf("expected state %q, got %q", state, actual)
 	}
 	return nil
 }

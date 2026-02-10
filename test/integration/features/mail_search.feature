@@ -33,3 +33,11 @@ Feature: Mail search
     When I search for "meeting notes" with snippets and limit 10
     Then I should receive 1 search results with snippets
     And search result 1 should have a preview snippet
+
+  Scenario: Advanced search with snippets
+    Given the following emails exist:
+      | id      | subject       | preview                    | read | flagged |
+      | email-1 | Meeting Notes | Notes from today's meeting | true | false   |
+    When I search advanced with snippets for from "alice@example.com" with limit 10
+    Then I should receive 1 search results with snippets
+    And search result 1 should have a preview snippet

@@ -16,6 +16,14 @@ Feature: Get single email with full content
     And the email should have body containing "full body"
     And the email body should not be empty
 
+  Scenario: Get email metadata only (without body)
+    Given the following emails exist:
+      | id       | subject     | preview        | read | flagged | from_email         | from_name  |
+      | email-m1 | Meta Email  | Preview text   | true | false   | sender@example.com | Sender     |
+    When I get email metadata for "email-m1"
+    Then the email metadata should have subject "Meta Email"
+    And the email metadata body should be empty
+
   Scenario: List emails includes sender
     Given the following emails exist:
       | id   | subject       | from_name  | from_email       |

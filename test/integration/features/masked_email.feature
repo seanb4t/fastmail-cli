@@ -38,6 +38,15 @@ Feature: Masked email management
     When I enable masked email "me-1"
     Then the masked email operation should succeed
 
+  Scenario: Get a single masked email by ID
+    Given the following masked emails exist:
+      | id   | email               | state   | forDomain   | description    |
+      | me-1 | abc123@fastmail.com | enabled | example.com | Example signup |
+    When I get masked email "me-1"
+    Then the masked email get should succeed
+    And the retrieved masked email should have email "abc123@fastmail.com"
+    And the retrieved masked email should have state "enabled"
+
   Scenario: Delete a masked email
     Given the following masked emails exist:
       | id   | email                    | state   | forDomain   | description     |
