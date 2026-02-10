@@ -28,6 +28,7 @@ type World struct {
 	// Servers
 	SessionServer *httptest.Server
 	APIServer     *httptest.Server
+	BlobServer    *httptest.Server
 
 	// Test data
 	Mailboxes []MockMailbox
@@ -58,17 +59,27 @@ type MockMailbox struct {
 
 // MockEmail holds email test data for mock server responses.
 type MockEmail struct {
-	ID         string          `json:"id"`
-	ThreadID   string          `json:"threadId"`
-	Subject    string          `json:"subject"`
-	Preview    string          `json:"preview"`
-	ReceivedAt string          `json:"receivedAt"`
-	Size       uint64          `json:"size"`
-	Keywords   map[string]bool `json:"keywords"`
-	MailboxIDs map[string]bool `json:"mailboxIds"`
-	From       *MockAddress    `json:"from,omitempty"`
-	To         []MockAddress   `json:"to,omitempty"`
-	Body       string          `json:"body,omitempty"`
+	ID          string           `json:"id"`
+	ThreadID    string           `json:"threadId"`
+	Subject     string           `json:"subject"`
+	Preview     string           `json:"preview"`
+	ReceivedAt  string           `json:"receivedAt"`
+	Size        uint64           `json:"size"`
+	Keywords    map[string]bool  `json:"keywords"`
+	MailboxIDs  map[string]bool  `json:"mailboxIds"`
+	From        *MockAddress     `json:"from,omitempty"`
+	To          []MockAddress    `json:"to,omitempty"`
+	Body        string           `json:"body,omitempty"`
+	Attachments []MockAttachment `json:"attachments,omitempty"`
+}
+
+// MockAttachment holds attachment test data for mock email responses.
+type MockAttachment struct {
+	BlobID      string `json:"blobId"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Size        uint64 `json:"size"`
+	Disposition string `json:"disposition"`
 }
 
 // MockAddress holds a name/email pair for mock email addresses.
@@ -103,6 +114,11 @@ func DefaultMailboxes() []MockMailbox {
 
 // SessionResponse returns a valid JMAP session JSON for the given API URL.
 func SessionResponse(apiURL string) string {
+	return SessionResponseWithBlob(apiURL, "https://example.com/download/{accountId}/{blobId}/{name}", "https://example.com/upload/{accountId}/")
+}
+
+// SessionResponseWithBlob returns a valid JMAP session JSON with configurable download/upload URLs.
+func SessionResponseWithBlob(apiURL, downloadURL, uploadURL string) string {
 	return `{
 		"capabilities": {
 			"urn:ietf:params:jmap:core": {},
@@ -128,8 +144,8 @@ func SessionResponse(apiURL string) string {
 		},
 		"username": "test@example.com",
 		"apiUrl": "` + apiURL + `",
-		"downloadUrl": "https://example.com/download",
-		"uploadUrl": "https://example.com/upload/{accountId}/",
+		"downloadUrl": "` + downloadURL + `",
+		"uploadUrl": "` + uploadURL + `",
 		"eventSourceUrl": "https://example.com/events",
 		"state": "s1"
 	}`
@@ -151,6 +167,9 @@ func NewMockServers(w *World) {
 func CloseServers(w *World) {
 	if w.APIServer != nil {
 		w.APIServer.Close()
+	}
+	if w.BlobServer != nil {
+		w.BlobServer.Close()
 	}
 	if w.SessionServer != nil {
 		w.SessionServer.Close()
@@ -386,6 +405,21 @@ func emailToFullMap(e MockEmail) map[string]any {
 			"1": map[string]any{"value": e.Body, "isEncodingProblem": false, "isTruncated": false},
 		}
 		result["textBody"] = []map[string]any{{"partId": "1", "type": "text/plain"}}
+	}
+
+	// Attachments — only present when mock data provides them
+	if len(e.Attachments) > 0 {
+		atts := make([]map[string]any, len(e.Attachments))
+		for i, a := range e.Attachments {
+			atts[i] = map[string]any{
+				"blobId":      a.BlobID,
+				"name":        a.Name,
+				"type":        a.Type,
+				"size":        a.Size,
+				"disposition": a.Disposition,
+			}
+		}
+		result["attachments"] = atts
 	}
 
 	return result
