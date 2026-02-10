@@ -38,7 +38,7 @@ func getContactData(w *World) *contactDomainData {
 func newMockCardDAVServer(contacts []MockContact) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == "PROPFIND" && r.URL.Path == "/":
+		case r.Method == "PROPFIND":
 			servePropfindResponse(w)
 
 		case r.Method == "REPORT":
@@ -47,10 +47,30 @@ func newMockCardDAVServer(contacts []MockContact) *httptest.Server {
 		case r.Method == "GET":
 			serveGetContactResponse(w, r, contacts)
 
+		case r.Method == "PUT":
+			servePutContactResponse(w, r)
+
+		case r.Method == "DELETE":
+			serveDeleteContactResponse(w)
+
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	}))
+}
+
+func servePutContactResponse(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("ETag", `"etag-new"`)
+	// Create (If-None-Match: *) returns 201 Created; update returns 204 No Content.
+	if r.Header.Get("If-None-Match") == "*" {
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func serveDeleteContactResponse(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func servePropfindResponse(w http.ResponseWriter) {

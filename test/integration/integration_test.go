@@ -53,6 +53,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	registerExportSteps(sc)
 	registerAuthSteps(sc)
 	registerContactSteps(sc)
+	registerMCPContactsSteps(sc)
 	registerCalendarSteps(sc)
 	registerMailAttachmentSteps(sc)
 	registerMailThreadSteps(sc)
