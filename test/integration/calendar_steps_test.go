@@ -22,6 +22,10 @@ func registerCalendarSteps(sc *godog.ScenarioContext) {
 	// When steps
 	sc.Step(`^I list calendars$`, iListCalendars)
 	sc.Step(`^I list events in calendar "([^"]*)" from "([^"]*)" to "([^"]*)"$`, iListEventsInCalendar)
+	sc.Step(`^I get event "([^"]*)"$`, iGetEvent)
+	sc.Step(`^I create an event in calendar "([^"]*)" with:$`, iCreateEvent)
+	sc.Step(`^I update event "([^"]*)" in calendar "([^"]*)" with summary "([^"]*)"$`, iUpdateEvent)
+	sc.Step(`^I delete event "([^"]*)"$`, iDeleteEvent)
 
 	// Then steps
 	sc.Step(`^I should receive (\d+) calendars?$`, iShouldReceiveNCalendars)
@@ -30,6 +34,10 @@ func registerCalendarSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^I should receive (\d+) events?$`, iShouldReceiveNEvents)
 	sc.Step(`^event (\d+) should have summary "([^"]*)"$`, eventShouldHaveSummary)
 	sc.Step(`^event (\d+) should have location "([^"]*)"$`, eventShouldHaveLocation)
+	sc.Step(`^the operation should succeed$`, theCalendarOperationShouldSucceed)
+	sc.Step(`^the event should have summary "([^"]*)"$`, theEventShouldHaveSummary)
+	sc.Step(`^the event should have location "([^"]*)"$`, theEventShouldHaveLocation)
+	sc.Step(`^the event should have description "([^"]*)"$`, theEventShouldHaveDescription)
 }
 
 // Given steps
@@ -115,7 +123,149 @@ func iListEventsInCalendar(ctx context.Context, calendarID, startStr, endStr str
 	return ctx, nil
 }
 
+func iGetEvent(ctx context.Context, eventID string) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	data := getCalendarData(w)
+	result := getCalendarResult(w)
+
+	server := newMockCalDAVServer(data)
+	defer server.Close()
+
+	davClient := dav.NewClient(server.URL, "test", "test-token")
+	calService := fastmail.NewCalendarService(davClient)
+
+	event, err := calService.GetEvent(ctx, eventID)
+	result.OperationErr = err
+	if err == nil && event != nil {
+		result.SingleEvent = &eventResultItem{
+			UID:         event.UID,
+			Summary:     event.Summary,
+			Description: event.Description,
+			Location:    event.Location,
+			Start:       event.Start,
+			End:         event.End,
+		}
+	}
+	return ctx, nil
+}
+
+func iCreateEvent(ctx context.Context, calendarID string, table *godog.Table) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	data := getCalendarData(w)
+	result := getCalendarResult(w)
+
+	events := parseEventTable(table, calendarID)
+	if len(events) == 0 {
+		return ctx, fmt.Errorf("no event data provided in table")
+	}
+
+	me := events[0]
+
+	server := newMockCalDAVServer(data)
+	defer server.Close()
+
+	davClient := dav.NewClient(server.URL, "test", "test-token")
+	calService := fastmail.NewCalendarService(davClient)
+
+	event := &fastmail.Event{
+		CalendarID:  calendarID,
+		UID:         me.UID,
+		Summary:     me.Summary,
+		Description: me.Description,
+		Location:    me.Location,
+		Start:       me.Start,
+		End:         me.End,
+	}
+
+	result.OperationErr = calService.CreateEvent(ctx, event)
+	return ctx, nil
+}
+
+func iUpdateEvent(ctx context.Context, eventID, calendarID, summary string) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	data := getCalendarData(w)
+	result := getCalendarResult(w)
+
+	server := newMockCalDAVServer(data)
+	defer server.Close()
+
+	davClient := dav.NewClient(server.URL, "test", "test-token")
+	calService := fastmail.NewCalendarService(davClient)
+
+	event := &fastmail.Event{
+		ID:         eventID,
+		CalendarID: calendarID,
+		UID:        "updated-event",
+		Summary:    summary,
+		Start:      time.Now().UTC(),
+		End:        time.Now().UTC().Add(time.Hour),
+	}
+
+	result.OperationErr = calService.UpdateEvent(ctx, event)
+	return ctx, nil
+}
+
+func iDeleteEvent(ctx context.Context, eventID string) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	data := getCalendarData(w)
+	result := getCalendarResult(w)
+
+	server := newMockCalDAVServer(data)
+	defer server.Close()
+
+	davClient := dav.NewClient(server.URL, "test", "test-token")
+	calService := fastmail.NewCalendarService(davClient)
+
+	result.OperationErr = calService.DeleteEvent(ctx, eventID)
+	return ctx, nil
+}
+
 // Then steps
+
+func theCalendarOperationShouldSucceed(ctx context.Context) error {
+	w := WorldFromContext(ctx)
+	result := getCalendarResult(w)
+	if result.OperationErr != nil {
+		return fmt.Errorf("expected operation to succeed, got error: %w", result.OperationErr)
+	}
+	return nil
+}
+
+func theEventShouldHaveSummary(ctx context.Context, summary string) error {
+	w := WorldFromContext(ctx)
+	result := getCalendarResult(w)
+	if result.SingleEvent == nil {
+		return fmt.Errorf("no single event result available")
+	}
+	if result.SingleEvent.Summary != summary {
+		return fmt.Errorf("expected event summary %q, got %q", summary, result.SingleEvent.Summary)
+	}
+	return nil
+}
+
+func theEventShouldHaveLocation(ctx context.Context, location string) error {
+	w := WorldFromContext(ctx)
+	result := getCalendarResult(w)
+	if result.SingleEvent == nil {
+		return fmt.Errorf("no single event result available")
+	}
+	if result.SingleEvent.Location != location {
+		return fmt.Errorf("expected event location %q, got %q", location, result.SingleEvent.Location)
+	}
+	return nil
+}
+
+func theEventShouldHaveDescription(ctx context.Context, description string) error {
+	w := WorldFromContext(ctx)
+	result := getCalendarResult(w)
+	if result.SingleEvent == nil {
+		return fmt.Errorf("no single event result available")
+	}
+	if result.SingleEvent.Description != description {
+		return fmt.Errorf("expected event description %q, got %q", description, result.SingleEvent.Description)
+	}
+	return nil
+}
 
 func iShouldReceiveNCalendars(ctx context.Context, count int) error {
 	w := WorldFromContext(ctx)

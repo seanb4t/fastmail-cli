@@ -40,6 +40,7 @@ type calendarDomainData struct {
 type calendarResult struct {
 	Calendars    []calendarResultItem
 	Events       []eventResultItem
+	SingleEvent  *eventResultItem
 	OperationErr error
 }
 
