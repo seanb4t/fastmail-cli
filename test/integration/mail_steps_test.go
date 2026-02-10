@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cucumber/godog"
@@ -24,6 +25,7 @@ func registerMailSteps(sc *godog.ScenarioContext) {
 
 	// When steps
 	sc.Step(`^I list emails from "([^"]*)" with limit (\d+)$`, iListEmailsWithLimit)
+	sc.Step(`^I get email "([^"]*)"$`, iGetEmail)
 	sc.Step(`^I search for "([^"]*)" with limit (\d+)$`, iSearchWithLimit)
 	sc.Step(`^I search with filter from "([^"]*)" with limit (\d+)$`, iSearchWithFilterFrom)
 	sc.Step(`^I search for "([^"]*)" with snippets and limit (\d+)$`, iSearchWithSnippets)
@@ -35,8 +37,13 @@ func registerMailSteps(sc *godog.ScenarioContext) {
 	// Then steps
 	sc.Step(`^I should receive (\d+) emails?$`, iShouldReceiveNEmails)
 	sc.Step(`^email (\d+) should have subject "([^"]*)"$`, emailShouldHaveSubject)
+	sc.Step(`^email (\d+) should have from "([^"]*)"$`, emailShouldHaveFrom)
 	sc.Step(`^email (\d+) should be read$`, emailShouldBeRead)
 	sc.Step(`^email (\d+) should be flagged$`, emailShouldBeFlagged)
+	sc.Step(`^the email should have subject "([^"]*)"$`, theEmailShouldHaveSubject)
+	sc.Step(`^the email should have from "([^"]*)"$`, theEmailShouldHaveFrom)
+	sc.Step(`^the email should have body containing "([^"]*)"$`, theEmailShouldHaveBodyContaining)
+	sc.Step(`^the email body should not be empty$`, theEmailBodyShouldNotBeEmpty)
 	sc.Step(`^the send should succeed$`, theSendShouldSucceed)
 	sc.Step(`^the sent email ID should not be empty$`, theSentEmailIDShouldNotBeEmpty)
 	sc.Step(`^the flag operation should succeed$`, theFlagOperationShouldSucceed)
@@ -85,6 +92,21 @@ func iListEmailsWithLimit(ctx context.Context, folder string, limit int) (contex
 	emails, err := client.Mail().List(ctx, folder, uint64(limit))
 	w.ResultError = err
 	w.ResultEmails = emailsToMaps(emails)
+	return ctx, nil
+}
+
+func iGetEmail(ctx context.Context, emailID string) (context.Context, error) {
+	w := WorldFromContext(ctx)
+	if w.DomainData == nil {
+		w.DomainData = make(map[string]any)
+	}
+	client := fastmail.NewClient(w.SessionServer.URL, "test-token")
+
+	email, err := client.Mail().GetWithBody(ctx, emailID)
+	w.ResultError = err
+	if err == nil {
+		w.DomainData["single_email"] = email
+	}
 	return ctx, nil
 }
 
@@ -242,6 +264,68 @@ func emailShouldBeFlagged(ctx context.Context, index int) error {
 	return nil
 }
 
+func emailShouldHaveFrom(ctx context.Context, index int, from string) error {
+	w := WorldFromContext(ctx)
+	i := index - 1
+	if i < 0 || i >= len(w.ResultEmails) {
+		return fmt.Errorf("email index %d out of range (have %d)", index, len(w.ResultEmails))
+	}
+	actual, _ := w.ResultEmails[i]["from"].(string)
+	if actual != from {
+		return fmt.Errorf("expected from %q, got %q", from, actual)
+	}
+	return nil
+}
+
+func theEmailShouldHaveSubject(ctx context.Context, subject string) error {
+	w := WorldFromContext(ctx)
+	email, ok := w.DomainData["single_email"].(*fastmail.Email)
+	if !ok || email == nil {
+		return fmt.Errorf("no single email result (was get email called?)")
+	}
+	if email.Subject != subject {
+		return fmt.Errorf("expected subject %q, got %q", subject, email.Subject)
+	}
+	return nil
+}
+
+func theEmailShouldHaveFrom(ctx context.Context, from string) error {
+	w := WorldFromContext(ctx)
+	email, ok := w.DomainData["single_email"].(*fastmail.Email)
+	if !ok || email == nil {
+		return fmt.Errorf("no single email result (was get email called?)")
+	}
+	actual := email.From.Email
+	if actual != from {
+		return fmt.Errorf("expected from email %q, got %q", from, actual)
+	}
+	return nil
+}
+
+func theEmailShouldHaveBodyContaining(ctx context.Context, text string) error {
+	w := WorldFromContext(ctx)
+	email, ok := w.DomainData["single_email"].(*fastmail.Email)
+	if !ok || email == nil {
+		return fmt.Errorf("no single email result (was get email called?)")
+	}
+	if !strings.Contains(email.Body, text) {
+		return fmt.Errorf("expected body to contain %q, got %q", text, email.Body)
+	}
+	return nil
+}
+
+func theEmailBodyShouldNotBeEmpty(ctx context.Context) error {
+	w := WorldFromContext(ctx)
+	email, ok := w.DomainData["single_email"].(*fastmail.Email)
+	if !ok || email == nil {
+		return fmt.Errorf("no single email result (was get email called?)")
+	}
+	if email.Body == "" {
+		return fmt.Errorf("expected non-empty body, got empty")
+	}
+	return nil
+}
+
 func theSendShouldSucceed(ctx context.Context) error {
 	w := WorldFromContext(ctx)
 	if w.ResultError != nil {
@@ -322,6 +406,15 @@ func parseEmailTable(table *godog.Table, defaultMailboxID string) []MockEmail {
 			MailboxIDs: map[string]bool{defaultMailboxID: true},
 		}
 
+		if fromEmail := cellValue(row, headers, "from_email"); fromEmail != "" {
+			e.From = &MockAddress{
+				Name:  cellValue(row, headers, "from_name"),
+				Email: fromEmail,
+			}
+		}
+		if body := cellValue(row, headers, "body"); body != "" {
+			e.Body = body
+		}
 		if cellValue(row, headers, "read") == "true" {
 			e.Keywords["$seen"] = true
 		}
@@ -348,6 +441,7 @@ func emailsToMaps(emails []fastmail.Email) []map[string]any {
 		result[i] = map[string]any{
 			"id":         e.ID,
 			"subject":    e.Subject,
+			"from":       e.From.Email,
 			"preview":    e.Preview,
 			"is_read":    e.IsRead(),
 			"is_flagged": e.IsFlagged(),

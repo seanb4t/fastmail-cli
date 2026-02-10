@@ -216,7 +216,7 @@ func makeMailGetHandler(cfg ToolsConfig) ToolHandler {
 			return nil, oops.Errorf("id is required")
 		}
 
-		email, err := cfg.Client.Mail().Get(ctx, id)
+		email, err := cfg.Client.Mail().GetWithBody(ctx, id)
 		if err != nil {
 			return nil, oops.Wrapf(err, "getting email")
 		}

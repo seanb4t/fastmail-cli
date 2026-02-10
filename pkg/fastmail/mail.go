@@ -46,7 +46,7 @@ func (s *MailService) List(ctx context.Context, folder string, limit uint64) ([]
 
 	// Chain Email/get to fetch the actual emails
 	getBuilder := jmap.NewEmailGet(accountID).
-		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+		Properties("id", "threadId", "subject", "from", "preview", "receivedAt", "size", "keywords", "mailboxIds")
 	getArgs := getBuilder.Build()
 	getArgs["#ids"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
 	req.Invoke("Email/get", getArgs)
@@ -209,7 +209,7 @@ func (s *MailService) Search(ctx context.Context, query string, limit uint64) ([
 
 	// Chain Email/get
 	getBuilder := jmap.NewEmailGet(accountID).
-		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+		Properties("id", "threadId", "subject", "from", "preview", "receivedAt", "size", "keywords", "mailboxIds")
 	getArgs := getBuilder.Build()
 	getArgs["#ids"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
 	req.Invoke("Email/get", getArgs)
@@ -275,7 +275,7 @@ func (s *MailService) SearchWithSnippets(ctx context.Context, query string, limi
 
 	// 2. Email/get with back-reference to query result IDs
 	getBuilder := jmap.NewEmailGet(accountID).
-		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+		Properties("id", "threadId", "subject", "from", "preview", "receivedAt", "size", "keywords", "mailboxIds")
 	getArgs := getBuilder.Build()
 	getArgs["#ids"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
 	req.Invoke("Email/get", getArgs)
@@ -409,7 +409,7 @@ func (s *MailService) SearchAdvanced(ctx context.Context, opts SearchOptions) ([
 	queryCallID := req.Invoke("Email/query", queryArgs)
 
 	getBuilder := jmap.NewEmailGet(accountID).
-		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+		Properties("id", "threadId", "subject", "from", "preview", "receivedAt", "size", "keywords", "mailboxIds")
 	getArgs := getBuilder.Build()
 	getArgs["#ids"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
 	req.Invoke("Email/get", getArgs)
@@ -470,7 +470,7 @@ func (s *MailService) SearchAdvancedWithSnippets(ctx context.Context, opts Searc
 	queryCallID := req.Invoke("Email/query", queryArgs)
 
 	getBuilder := jmap.NewEmailGet(accountID).
-		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+		Properties("id", "threadId", "subject", "from", "preview", "receivedAt", "size", "keywords", "mailboxIds")
 	getArgs := getBuilder.Build()
 	getArgs["#ids"] = jmap.ResultReference(queryCallID, "Email/query", "/ids")
 	req.Invoke("Email/get", getArgs)
@@ -837,10 +837,16 @@ func convertEmails(jmapEmails []jmap.Email) []Email {
 
 		attachments := convertAttachments(je.Attachments)
 
+		var from EmailAddress
+		if len(je.From) > 0 {
+			from = EmailAddress{Name: je.From[0].Name, Email: je.From[0].Email}
+		}
+
 		emails[i] = Email{
 			ID:          je.ID,
 			ThreadID:    je.ThreadID,
 			Subject:     je.Subject,
+			From:        from,
 			Preview:     je.Preview,
 			ReceivedAt:  receivedAt,
 			Size:        je.Size,
@@ -1011,7 +1017,7 @@ func (s *MailService) GetThread(ctx context.Context, threadID string) ([]Email, 
 	// Step 2: Email/get to fetch the actual emails
 	getBuilder := jmap.NewEmailGet(accountID).
 		IDs(emailIDs...).
-		Properties("id", "threadId", "subject", "preview", "receivedAt", "size", "keywords", "mailboxIds")
+		Properties("id", "threadId", "subject", "from", "preview", "receivedAt", "size", "keywords", "mailboxIds")
 
 	emailReq := jmap.NewRequest().WithCapabilities(jmap.CapCore, jmap.CapMail)
 	emailCallID := emailReq.Invoke("Email/get", getBuilder.Build())

@@ -66,6 +66,15 @@ type MockEmail struct {
 	Size       uint64          `json:"size"`
 	Keywords   map[string]bool `json:"keywords"`
 	MailboxIDs map[string]bool `json:"mailboxIds"`
+	From       *MockAddress    `json:"from,omitempty"`
+	To         []MockAddress   `json:"to,omitempty"`
+	Body       string          `json:"body,omitempty"`
+}
+
+// MockAddress holds a name/email pair for mock email addresses.
+type MockAddress struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 // worldKey is the context key for World.
@@ -284,6 +293,16 @@ func emailGetResponse(w *World, args map[string]any) map[string]any {
 		requestedIDs = w.lastQueryIDs
 	}
 
+	// Extract requested properties (JMAP RFC 8620 §5.1 property filtering)
+	var properties []string
+	if props, ok := args["properties"].([]any); ok {
+		for _, p := range props {
+			if s, ok := p.(string); ok {
+				properties = append(properties, s)
+			}
+		}
+	}
+
 	var list []map[string]any
 	emails := w.Emails
 
@@ -294,12 +313,12 @@ func emailGetResponse(w *World, args map[string]any) map[string]any {
 		}
 		for _, e := range emails {
 			if idSet[e.ID] {
-				list = append(list, emailToMap(e))
+				list = append(list, filterByProperties(emailToFullMap(e), properties))
 			}
 		}
 	} else {
 		for _, e := range emails {
-			list = append(list, emailToMap(e))
+			list = append(list, filterByProperties(emailToFullMap(e), properties))
 		}
 	}
 
@@ -315,7 +334,8 @@ func emailGetResponse(w *World, args map[string]any) map[string]any {
 	}
 }
 
-func emailToMap(e MockEmail) map[string]any {
+// emailToFullMap returns all fields for a MockEmail. The caller filters by requested properties.
+func emailToFullMap(e MockEmail) map[string]any {
 	keywords := e.Keywords
 	if keywords == nil {
 		keywords = map[string]bool{}
@@ -337,7 +357,7 @@ func emailToMap(e MockEmail) map[string]any {
 		threadID = "t-" + e.ID
 	}
 
-	return map[string]any{
+	result := map[string]any{
 		"id":         e.ID,
 		"threadId":   threadID,
 		"subject":    e.Subject,
@@ -347,6 +367,43 @@ func emailToMap(e MockEmail) map[string]any {
 		"keywords":   keywords,
 		"mailboxIds": mailboxIDs,
 	}
+
+	// Address fields — only present when the mock data provides them
+	if e.From != nil {
+		result["from"] = []map[string]any{{"name": e.From.Name, "email": e.From.Email}}
+	}
+	if len(e.To) > 0 {
+		to := make([]map[string]any, len(e.To))
+		for i, a := range e.To {
+			to[i] = map[string]any{"name": a.Name, "email": a.Email}
+		}
+		result["to"] = to
+	}
+
+	// Body content — only present when mock data provides it
+	if e.Body != "" {
+		result["bodyValues"] = map[string]any{
+			"1": map[string]any{"value": e.Body, "isEncodingProblem": false, "isTruncated": false},
+		}
+		result["textBody"] = []map[string]any{{"partId": "1", "type": "text/plain"}}
+	}
+
+	return result
+}
+
+// filterByProperties returns only the fields present in the requested properties list.
+// Per JMAP RFC 8620 §5.1, "id" is always included.
+func filterByProperties(full map[string]any, properties []string) map[string]any {
+	if len(properties) == 0 {
+		return full
+	}
+	result := map[string]any{"id": full["id"]}
+	for _, prop := range properties {
+		if val, ok := full[prop]; ok {
+			result[prop] = val
+		}
+	}
+	return result
 }
 
 func emailSetResponse(args map[string]any) map[string]any {

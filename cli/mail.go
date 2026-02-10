@@ -309,7 +309,7 @@ func newMailShowCommand() *cobra.Command {
 				return fmt.Errorf("connecting: %w", err)
 			}
 
-			email, err := client.Mail().Get(ctx, emailID)
+			email, err := client.Mail().GetWithBody(ctx, emailID)
 			if err != nil {
 				return fmt.Errorf("getting email: %w", err)
 			}

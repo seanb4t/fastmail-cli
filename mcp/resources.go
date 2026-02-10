@@ -214,7 +214,7 @@ func (r *ResourceRegistry) handleMail(ctx context.Context, params map[string]str
 		return nil, oops.Errorf("email ID required")
 	}
 
-	email, err := r.client.Mail().Get(ctx, id)
+	email, err := r.client.Mail().GetWithBody(ctx, id)
 	if err != nil {
 		return nil, oops.Wrapf(err, "getting email %s", id)
 	}
